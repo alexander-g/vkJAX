@@ -14,27 +14,29 @@ Variable = namedtuple('Variable', ['tensor', 'dtype', 'shape'])
 
 class KomputeInterpreter:
     def __init__(self, grouped_statements:tp.Dict[str, tp.List[HLO_Statement]]):
-        self.mgr = kp.Manager()
+        self.mgr         = kp.Manager()
+        self.functions   = grouped_statements
         self.variables:tp.Dict[str, Variable] = {}
-        self.functions = grouped_statements
+        self._call_stack = []
 
         self.sequence    = self.mgr.create_sequence("")
         self.sequence.begin()
-        entry_statements = get_entry_function(self.functions)
-        output_vars      = self.call(entry_statements)
+        entry_function   = get_entry_function(self.functions)
+        output_vars      = self.call(entry_function)
         output_tensors   = [var.tensor for var in output_vars]
         self.sequence.record_tensor_sync_local(output_tensors)
         self.sequence.end()
 
     def run(self, *X):
-        param_tensors    = [var.tensor for varname, var in self.variables.items() if varname.startswith('parameter')]
-        assert len(param_tensors) == len(X)
-        for param_tensor,x in zip(param_tensors,X):
-            param_tensor.set_data(np.ravel(x))
+        entry_func       =  get_entry_function(self.functions)
+        input_vars       = [self.variables[stmt.varname] for stmt in entry_func if stmt.call_func=='parameter']
+        assert len(input_vars) == len(X)
+        for input_var,x in zip(input_vars,X):
+            input_var.tensor.set_data(np.ravel(x))
 
         self.sequence.eval()
         
-        root_stmt        = get_root_statement(get_entry_function(self.functions))
+        root_stmt        = get_root_statement(entry_func)
         outputs:tp.Tuple = self.variables[root_stmt.varname]
         outputs          = [o.tensor.numpy().reshape(o.shape) for o in outputs]
         if len(outputs)==1:
@@ -46,33 +48,47 @@ class KomputeInterpreter:
 
 
 
-    def call(self, statements:tp.List[HLO_Statement]):
-        for stmt in statements:
+    def call(self, func:tp.Union[HLO_Statement, tp.List[HLO_Statement]]):
+        if isinstance(func, HLO_Statement):
+            assert func.call_static_params.startswith('to_apply=')
+            func_name  = func.call_static_params.replace('to_apply=','')
+            self._call_stack.append(func.call_params)
+            func       = self.functions[func_name]
+        else:
+            self._call_stack.append([])
+        for stmt in func:
             result = self.interpret_statement(stmt)
             self.variables[stmt.varname] = result
-        #last statement should be always the return value
+        self._call_stack.pop(-1)
+        #last statement should be always be the return value
         assert stmt.varname.startswith('ROOT')
         return result
     
     def interpret_statement(self, stmt:HLO_Statement):
-        method = getattr(self, stmt.call_func, None)
+        func_name = stmt.call_func.replace('-','_')
+        method = getattr(self, func_name, None)
         if method is None:
             raise NotImplementedError(stmt)
         return method(stmt)
 
     def parameter(self, stmt:HLO_Statement):
-        var = self.variables.get(stmt.varname, None)
-        if var is None:
+        if len(self._call_stack[-1])==0:
+            #no parameters provided: top level call
             dtype, shape = stmt.vartypeshape
             tensor = kp.Tensor(np.ones(shape, dtype).ravel())
             self.mgr.eval_tensor_create_def([tensor])
             self.sequence.record_tensor_sync_device([tensor])
             return Variable(tensor, dtype, shape)
-        return var
+        else:
+            #nested call
+            assert len(stmt.call_params)==1
+            index   = int(stmt.call_params[0])
+            varname = self._call_stack[-1][index]
+            return self.variables[varname]
+        
     
     def constant(self, stmt:HLO_Statement):
         assert stmt.call_static_params == ''
-        print(stmt)
         if stmt.call_params==['false']:
             result = False
         elif stmt.call_params==['true']:
@@ -114,6 +130,14 @@ class KomputeInterpreter:
         shader_bytes = get_shader('broadcast')
         self.sequence.record_algo_data([result]+params, shader_bytes)
         return Variable(result, dtype, shape)
+    
+    def get_tuple_element(self, stmt:HLO_Statement):
+        assert stmt.call_static_params.startswith('index=')
+        index  = int(stmt.call_static_params.replace('index=',''))
+        params = [ self.variables[param_name] for param_name in stmt.call_params ]
+        assert len(params)==1
+        tuple  = params[0]
+        return tuple[index]
 
 
 
