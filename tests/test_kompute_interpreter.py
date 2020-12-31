@@ -2,36 +2,29 @@ import vkjax.parser as parser
 import vkjax.kompute_interpreter as vki
 
 import jax, numpy as np
+import pytest
 
 
+add0 = lambda x: x+x
+
+def add0(x): return x+x
+
+param_list = [
+    (add0, 'add x+x scalar',            [5.0], ),
+    (add0, 'add x+x array1d',           [np.random.random(32)] ),
+    (add0, 'add x+x array3d',           [np.random.random((32,32,32))] ),
+]
 
 
-
-
-def test_basic_scalar():
-    f = lambda x: x+x
-    hlo = jax.xla_computation(f)(5.0).as_hlo_text()
+@pytest.mark.parametrize("f,desc,args", param_list)
+def test_matrix_kompute_interpreter(f, desc, args):
+    hlo = jax.xla_computation(f)(*args).as_hlo_text()
     functions = parser.parse_hlo(hlo)
-
     interpreter = vki.KomputeInterpreter(functions)
-    y = interpreter.run(x=5.0)
-    print(y)
-    assert y==10.0
-    
 
-def test_basic_array1d():
-    f = lambda x: x+x
-    X = np.linspace(0,1,32)
-    hlo = jax.xla_computation(f)(X).as_hlo_text()
-    functions = parser.parse_hlo(hlo)
+    y     = interpreter.run(*args)
+    ytrue = f(*args)
 
-    interpreter = vki.KomputeInterpreter(functions)
-    y = interpreter.run(x=X)
-    print(y)
-    assert y.shape == X.shape
-    assert np.allclose(y, X+X)
-    
-
-
-
+    assert np.shape(y) == np.shape(ytrue)
+    assert np.allclose(y, ytrue)
 

@@ -1,4 +1,5 @@
 import typing as tp
+from collections import namedtuple
 
 from .parser import HLO_Statement
 
@@ -7,36 +8,43 @@ import numpy as np
 
 
 
+Variable = namedtuple('Variable', ['tensor', 'dtype', 'shape'])
+
+
+
 class KomputeInterpreter:
     def __init__(self, grouped_statements:tp.Dict[str, tp.List[HLO_Statement]]):
-        self.functions = grouped_statements
-        self.variables:tp.Dict[str, tp.Any] = {}
-
         self.mgr = kp.Manager()
+        self.variables:tp.Dict[str, Variable] = {}
+        self.functions = grouped_statements
 
-    def run(self, x):
-        entry_name       = get_entry_function(self.functions)
-        entry_statements = self.functions[entry_name]
-        
         self.sequence    = self.mgr.create_sequence("")
         self.sequence.begin()
-        outputs          = self.call(entry_statements)
-        self.sequence.record_tensor_sync_local(list(outputs))
+        entry_statements = get_entry_function(self.functions)
+        output_vars      = self.call(entry_statements)
+        output_tensors   = [var.tensor for var in output_vars]
+        self.sequence.record_tensor_sync_local(output_tensors)
         self.sequence.end()
-        
-        param_tensors    = [tensor for varname, tensor in self.variables.items() if varname.startswith('parameter')]
+
+    def run(self, x):
+        param_tensors    = [var.tensor for varname, var in self.variables.items() if varname.startswith('parameter')]
         assert len(param_tensors)==1
-        x = [x] if np.shape(x)==()  else x
-        param_tensors[0].set_data(x)
-        param_tensors[0].map_data_from_host()
-        self.mgr.eval_tensor_sync_device_def(param_tensors)
+        x                = [x] if np.shape(x)==()  else x
+        param_tensors[0].set_data(np.ravel(x))
 
         self.sequence.eval()
         
-        outputs = [o.numpy() for o in outputs]
+        root_stmt        = get_root_statement(get_entry_function(self.functions))
+        outputs:tp.Tuple = self.variables[root_stmt.varname]
+        outputs          = [o.tensor.numpy().reshape(o.shape) for o in outputs]
         if len(outputs)==1:
             outputs = outputs[0]
         return outputs
+
+
+
+
+
 
     def call(self, statements:tp.List[HLO_Statement]):
         for stmt in statements:
@@ -55,14 +63,15 @@ class KomputeInterpreter:
     def parameter(self, stmt:HLO_Statement):
         var = self.variables.get(stmt.varname, None)
         if var is None:
-            print('creating Tensor', stmt.varname, stmt.vartypeshape)
-            tensor = kp.Tensor(np.ones(stmt.vartypeshape.shape, stmt.vartypeshape.dtype).ravel())
+            dtype, shape = stmt.vartypeshape
+            print('creating Tensor', stmt.varname, dtype, shape)
+            tensor = kp.Tensor(np.ones(shape, dtype).ravel())
             self.mgr.eval_tensor_create_def([tensor])
-            #self.sequence.record_tensor_sync_device([tensor]) #TODO?: record tensor creation to sequence
-            return tensor
+            self.sequence.record_tensor_sync_device([tensor])
+            return Variable(tensor, dtype, shape)
         return var
     
-    def constant(self, stmt):
+    def constant(self, stmt:HLO_Statement):
         if stmt.call_params==['false']:
             result = False
         elif stmt.call_params==['true']:
@@ -71,17 +80,17 @@ class KomputeInterpreter:
             raise NotImplementedError(stmt)
         return result
     
-    def add(self, stmt):
+    def add(self, stmt:HLO_Statement):
         dtype, shape = stmt.vartypeshape
         assert stmt.call_static_params == ''
-        result = kp.Tensor( 65*np.ones( shape, dtype ).ravel() )
+        result = kp.Tensor( np.ones( shape, dtype ).ravel() )
         self.mgr.eval_tensor_create_def([result])
-        params = [ self.variables[param_name] for param_name in stmt.call_params ]
+        params = [ self.variables[param_name].tensor for param_name in stmt.call_params ]
         shader_bytes = get_shader('add')
         self.sequence.record_algo_data(params+[result], shader_bytes)
-        return result
+        return Variable(result, dtype, shape)
 
-    def tuple(self, stmt):
+    def tuple(self, stmt:HLO_Statement):
         assert stmt.call_static_params == ''
         params = [ self.variables[param_name] for param_name in stmt.call_params ]
         result = tuple(params)
@@ -91,11 +100,16 @@ class KomputeInterpreter:
 
 
 
-def get_entry_function(functions: tp.Dict[str, tp.List[str]]):
-    function_names  = functions.keys()
-    entry_functions = [name for name in function_names if name.startswith('ENTRY')]
+def get_entry_function(functions: tp.Dict[str, tp.List[HLO_Statement]]):
+    entry_functions = [f for name,f in functions.items() if name.startswith('ENTRY')]
     assert len(entry_functions)==1
     return entry_functions[0]
+
+def get_root_statement(statements: tp.List[HLO_Statement]):
+    root_stmt = [stmt for stmt in statements if stmt.varname.startswith('ROOT')]
+    assert len(root_stmt)==1
+    return root_stmt[0]
+
 
 
 
@@ -114,7 +128,7 @@ void main() {
 }
 '''
 
-def get_shader(name):
+def get_shader(name:str):
     if name=='add':
         shader_str = shader_add
     else:
