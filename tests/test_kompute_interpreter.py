@@ -5,18 +5,22 @@ import jax, numpy as np
 import pytest
 
 
-add0 = lambda x: x+x
-
 def add0(x): return x+x
+def add1(x): return x+1.0
 
-param_list = [
+
+
+param_matrix = [
     (add0, 'add x+x scalar',            [5.0], ),
     (add0, 'add x+x array1d',           [np.random.random(32)] ),
     (add0, 'add x+x array3d',           [np.random.random((32,32,32))] ),
+
+    (add1, 'add x+1 scalar',            [5.0] ),
+    (add1, 'add x+1 array3d',           [np.random.random((32,32,32))] ),
 ]
 
 
-@pytest.mark.parametrize("f,desc,args", param_list)
+@pytest.mark.parametrize("f,desc,args", param_matrix)
 def test_matrix_kompute_interpreter(f, desc, args):
     hlo = jax.xla_computation(f)(*args).as_hlo_text()
     functions = parser.parse_hlo(hlo)

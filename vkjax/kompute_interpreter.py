@@ -64,7 +64,6 @@ class KomputeInterpreter:
         var = self.variables.get(stmt.varname, None)
         if var is None:
             dtype, shape = stmt.vartypeshape
-            print('creating Tensor', stmt.varname, dtype, shape)
             tensor = kp.Tensor(np.ones(shape, dtype).ravel())
             self.mgr.eval_tensor_create_def([tensor])
             self.sequence.record_tensor_sync_device([tensor])
@@ -72,17 +71,25 @@ class KomputeInterpreter:
         return var
     
     def constant(self, stmt:HLO_Statement):
+        assert stmt.call_static_params == ''
+        print(stmt)
         if stmt.call_params==['false']:
             result = False
         elif stmt.call_params==['true']:
             result = True
+        elif stmt.vartypeshape.shape==():
+            dtype, shape = stmt.vartypeshape
+            constvalue   = np.array(stmt.call_params[0], dtype)
+            tensor       = kp.Tensor(constvalue.ravel())
+            self.mgr.eval_tensor_create_def([tensor])
+            return Variable(tensor, dtype, shape)
         else:
             raise NotImplementedError(stmt)
         return result
     
     def add(self, stmt:HLO_Statement):
-        dtype, shape = stmt.vartypeshape
         assert stmt.call_static_params == ''
+        dtype, shape = stmt.vartypeshape
         result = kp.Tensor( np.ones( shape, dtype ).ravel() )
         self.mgr.eval_tensor_create_def([result])
         params = [ self.variables[param_name].tensor for param_name in stmt.call_params ]
@@ -95,6 +102,19 @@ class KomputeInterpreter:
         params = [ self.variables[param_name] for param_name in stmt.call_params ]
         result = tuple(params)
         return result
+
+    def broadcast(self, stmt:HLO_Statement):
+        assert stmt.call_static_params == 'dimensions={}'
+        params = [ self.variables[param_name].tensor for param_name in stmt.call_params ]
+        assert len(params) == 1
+        #FIXME: this should not be a shader call
+        dtype, shape = stmt.vartypeshape
+        result       = kp.Tensor( np.ones( shape, dtype ).ravel() )
+        self.mgr.eval_tensor_create_def([result])
+        shader_bytes = get_shader('broadcast')
+        self.sequence.record_algo_data([result]+params, shader_bytes)
+        return Variable(result, dtype, shape)
+
 
 
 
@@ -128,9 +148,28 @@ void main() {
 }
 '''
 
+
+shader_broadcast = '''
+#version 450
+
+layout (local_size_x = 1) in;
+
+layout(set = 0, binding = 0) buffer bout { float result[]; };
+layout(set = 0, binding = 1) buffer bina { float in_a[]; };
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+    result[index] = in_a[0];
+}
+'''
+
+
+
 def get_shader(name:str):
     if name=='add':
         shader_str = shader_add
+    elif name=='broadcast':
+        shader_str = shader_broadcast
     else:
         raise NotImplementedError(name)
 
