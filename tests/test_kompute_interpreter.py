@@ -7,6 +7,7 @@ import pytest
 
 def add0(x): return x+x
 def add1(x): return x+1.0
+def add2(x,y): return x+y
 
 
 
@@ -17,6 +18,10 @@ param_matrix = [
 
     (add1, 'add x+1 scalar',            [5.0] ),
     (add1, 'add x+1 array3d',           [np.random.random((32,32,32))] ),
+
+    (add2, 'add x+y scalar-scalar',     [5.0, 7.0]),
+    (add2, 'add x+y scalar-array3d',    [5.0, np.random.random((32,32,32))]),
+    (add2, 'add x+y array3d-array3d',   [np.random.random((32,32,32)), np.random.random((32,32,32))]),
 ]
 
 

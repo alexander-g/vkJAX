@@ -26,11 +26,11 @@ class KomputeInterpreter:
         self.sequence.record_tensor_sync_local(output_tensors)
         self.sequence.end()
 
-    def run(self, x):
+    def run(self, *X):
         param_tensors    = [var.tensor for varname, var in self.variables.items() if varname.startswith('parameter')]
-        assert len(param_tensors)==1
-        x                = [x] if np.shape(x)==()  else x
-        param_tensors[0].set_data(np.ravel(x))
+        assert len(param_tensors) == len(X)
+        for param_tensor,x in zip(param_tensors,X):
+            param_tensor.set_data(np.ravel(x))
 
         self.sequence.eval()
         
