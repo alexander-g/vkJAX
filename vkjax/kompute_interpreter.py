@@ -2,6 +2,7 @@ import typing as tp
 from collections import namedtuple
 
 from .parser import HLO_Statement
+from .       import shaders
 
 import kp
 import numpy as np
@@ -109,7 +110,7 @@ class KomputeInterpreter:
         result = kp.Tensor( np.ones( shape, dtype ).ravel() )
         self.mgr.eval_tensor_create_def([result])
         params = [ self.variables[param_name].tensor for param_name in stmt.call_params ]
-        shader_bytes = get_shader('add')
+        shader_bytes = shaders.get_shader('add')
         self.sequence.record_algo_data(params+[result], shader_bytes)
         return Variable(result, dtype, shape)
 
@@ -127,7 +128,7 @@ class KomputeInterpreter:
         dtype, shape = stmt.vartypeshape
         result       = kp.Tensor( np.ones( shape, dtype ).ravel() )
         self.mgr.eval_tensor_create_def([result])
-        shader_bytes = get_shader('broadcast')
+        shader_bytes = shaders.get_shader('broadcast')
         self.sequence.record_algo_data([result]+params, shader_bytes)
         return Variable(result, dtype, shape)
     
@@ -156,57 +157,3 @@ def get_root_statement(statements: tp.List[HLO_Statement]):
 
 
 
-
-shader_add = '''
-#version 450
-
-layout (local_size_x = 1) in;
-
-layout(set = 0, binding = 0) buffer bina { float in_a[]; };
-layout(set = 0, binding = 1) buffer binb { float in_b[]; };
-layout(set = 0, binding = 2) buffer bout { float result[]; };
-
-void main() {
-    const uint index = gl_GlobalInvocationID.x;
-    result[index] = in_a[index] + in_b[index];
-}
-'''
-
-
-shader_broadcast = '''
-#version 450
-
-layout (local_size_x = 1) in;
-
-layout(set = 0, binding = 0) buffer bout { float result[]; };
-layout(set = 0, binding = 1) buffer bina { float in_a[]; };
-
-void main() {
-    const uint index = gl_GlobalInvocationID.x;
-    result[index] = in_a[0];
-}
-'''
-
-
-
-def get_shader(name:str):
-    if name=='add':
-        shader_str = shader_add
-    elif name=='broadcast':
-        shader_str = shader_broadcast
-    else:
-        raise NotImplementedError(name)
-
-    import tempfile, subprocess, os
-    tmpdir = tempfile.TemporaryDirectory(prefix='delete_me_')
-    fname  = os.path.join(tmpdir.name,'shader.comp')
-    open(fname,'w').write(shader_str)
-
-
-    cmd = './glslangValidator -V '+fname
-    if subprocess.Popen(cmd, shell=True).wait() != 0:
-        raise RuntimeError('GLSL compilation failed for shader '+name)
-    sprivname = fname.replace('shader.comp', 'comp.spv')
-    sprivname = 'comp.spv'
-    spirv     = open(sprivname, 'rb').read()
-    return spirv
