@@ -8,6 +8,7 @@ def add0(x): return x+x
 def add1(x): return x+1.0
 def add2(x,y): return x+y
 def add3(x,y): return jax.jit(add0)(x) + jax.jit(add2)(y,x)
+def add4(x,y): return jax.jit(add0)(x) + jax.jit(add2)(y, 1.0)
 
 
 
@@ -24,6 +25,9 @@ param_matrix = [
     (add2, 'add x+y array3d-array3d',   [np.random.random((32,32,32)), np.random.random((32,32,32))]),
 
     (add3, 'add nested (x+x)+(y+x)',    [5.0, 7.1]),
+    (add3, 'add nested (x+x)+(y+x)',    [5.0, 7.1]),
+
+    (add4, 'nested const (x+x)+(y+1)',  [5.0, 7.1]),
 ]
 
 
