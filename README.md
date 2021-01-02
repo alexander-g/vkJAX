@@ -1,2 +1,2 @@
 # vkJAX
-JAX interpreted based on Vulkan
+JAX interpreter based on Vulkan
