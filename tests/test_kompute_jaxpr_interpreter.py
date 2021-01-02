@@ -1,5 +1,4 @@
-import vkjax.parser as parser
-import vkjax.kompute_interpreter as vki
+import vkjax.kompute_jaxpr_interpreter as vkji
 
 import jax, numpy as np
 import pytest
@@ -31,9 +30,8 @@ param_matrix = [
 @pytest.mark.parametrize("f,desc,args", param_matrix)
 def test_matrix_kompute_interpreter(f, desc, args):
     print(f'==========TEST START: {desc}==========')
-    hlo = jax.xla_computation(f)(*args).as_hlo_text()
-    functions = parser.parse_hlo(hlo)
-    interpreter = vki.KomputeInterpreter(functions)
+    jaxpr = jax.make_jaxpr(f)(*args)
+    interpreter = vkji.JaxprInterpreter(jaxpr)
 
     y     = interpreter.run(*args)
     ytrue = f(*args)
