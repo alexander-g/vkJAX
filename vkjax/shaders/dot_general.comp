@@ -1,0 +1,26 @@
+#version 450
+
+layout (local_size_x = 1) in;
+
+// The input tensors bind index is relative to index in parameter passed
+layout(set = 0, binding = 0) buffer bout { float result[]; };
+layout(set = 0, binding = 1) buffer bina { float tina[]; };
+layout(set = 0, binding = 2) buffer binb { float tinb[]; };
+
+void main() {
+    //matrix-matrix multiplication with shapes (N,C) x (C,M) = (N,M)
+    //the constants N,C,M are injected in python
+    const uint N = {{N}};
+    const uint C = {{C}};
+    const uint M = {{M}};
+
+    const uint index = gl_GlobalInvocationID.x;
+    const uint row = index/M;
+    const uint col = index%M;
+
+    float sum = 0.0;
+    for(int i=0; i<C; i++){
+        sum += tina[row*C+i] * tinb[i*M+col];
+    }
+    result[index] = sum;
+}

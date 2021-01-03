@@ -7,11 +7,12 @@ SHADERS_DIR = os.path.join(VKJAX_ROOT, 'shaders')
 print(SHADERS_DIR)
 
 
-def get_shader(name:str):
+def get_shader(name:str, **constants):
     shader_file = os.path.join(SHADERS_DIR, f'{name}.comp')
     if not os.path.exists(shader_file):
         raise NotImplementedError(name)
-    shader_str  = open(shader_file).read()
+    shader_str = open(shader_file).read()
+    shader_str = preformat(shader_str).format(**constants) 
 
     tmpdir = tempfile.TemporaryDirectory(prefix='delete_me_')
     fname  = os.path.join(tmpdir.name,'shader.comp')
@@ -27,3 +28,13 @@ def get_shader(name:str):
 
 
 
+def preformat(msg):
+    """ allow {{key}} to be used for formatting in text
+    that already uses curly braces.  First switch this into
+    something else, replace curlies with double curlies, and then
+    switch back to regular braces
+    """
+    msg = msg.replace('{{', '<<<').replace('}}', '>>>')
+    msg = msg.replace('{', '{{').replace('}', '}}')
+    msg = msg.replace('<<<', '{').replace('>>>', '}')
+    return msg
