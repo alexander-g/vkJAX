@@ -1,0 +1,24 @@
+#version 450
+
+layout (local_size_x = 1) in;
+
+layout(set = 0, binding = 0) buffer bout { float result[]; };
+layout(set = 0, binding = 1) buffer bina { float in_a[]; };
+layout(set = 0, binding = 2) buffer binb { float in_b[]; };
+
+void main() {
+    //constants injectec in python
+    const uint COLS_OUT = {{COLS_OUT}};
+    const uint COLS_A   = {{COLS_A}};
+    const uint COLS_B   = {{COLS_B}};
+    const uint index = gl_GlobalInvocationID.x;
+
+
+    const uint row     = index / COLS_OUT;
+    const uint col     = index % COLS_OUT;
+    const uint a_or_b  = uint( col >= COLS_A );
+    const uint index_a = row*COLS_A + col;
+    const uint index_b = row*COLS_B + (col-COLS_A);
+    result[index]      = ((1-a_or_b) * in_a[index_a])   +   (a_or_b * in_b[index_b]);
+    //result[index] = a_or_b;
+}
