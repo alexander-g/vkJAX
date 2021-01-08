@@ -4,23 +4,31 @@ layout (local_size_x = 1) in;
 
 // The input tensors bind index is relative to index in parameter passed
 layout(set = 0, binding = 0) buffer bout { float result[]; };
-layout(set = 0, binding = 1) buffer bina { float tina[]; };
-layout(set = 0, binding = 2) buffer binb { float tinb[]; };
+layout(set = 0, binding = 1) buffer bina { float in_a[]; };
+layout(set = 0, binding = 2) buffer binb { float in_b[]; };
 
 void main() {
-    //matrix-matrix multiplication with shapes (N,C) x (C,M) = (N,M)
+    //matrix-matrix multiplication with output shape = (N,M)
     //the constants N,C,M are injected in python
     const uint N = {{N}};
     const uint C = {{C}};
     const uint M = {{M}};
+    //contracting dimensions 0/1
+    const uint CDIM_A = {{CDIM_A}};
+    const uint CDIM_B = {{CDIM_B}};
 
     const uint index = gl_GlobalInvocationID.x;
     const uint row = index/M;
     const uint col = index%M;
 
+    const uint stride_a = 1*CDIM_A + N*(1-CDIM_A);
+    const uint stride_b = 1*CDIM_B + M*(1-CDIM_B);
+    const uint offset_a = row*C*CDIM_A + row*(1-CDIM_A);
+    const uint offset_b = col*C*CDIM_B + col*(1-CDIM_B);
+
     float sum = 0.0;
     for(int i=0; i<C; i++){
-        sum += tina[row*C+i] * tinb[i*M+col];
+        sum += in_a[offset_a + i*stride_a] * in_b[offset_b + i*stride_b];
     }
     result[index] = sum;
 }

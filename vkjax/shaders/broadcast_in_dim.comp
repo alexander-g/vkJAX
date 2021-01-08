@@ -1,0 +1,51 @@
+#version 450
+
+layout (local_size_x = 1) in;
+
+layout(set = 0, binding = 0) buffer bout { float result[]; };
+layout(set = 0, binding = 1) buffer bina { float in_a[]; };
+
+
+//constants are injected in python
+const uint N             = {{N}};
+const uint SHAPE_IN[N]  = uint[]( {{SHAPE_IN}} );
+const uint SHAPE_OUT[N] = uint[]( {{SHAPE_OUT}} );
+
+
+uint[N] unravel_index(uint index, uint[N] shape){
+    uint[N] coords;
+    for(int i=int(N)-1; i>=0; i--){
+        coords[i] = index % shape[i];
+        index     = index / shape[i]; 
+    }
+    return coords;
+}
+
+uint ravel_coords(uint[N] coords, uint[N] shape){
+    uint index  = 0;
+    uint stride = 1;
+    for(int i=int(N)-1; i>=0; i--){
+        index  += coords[i]*stride;
+        stride *= shape[i];
+    }
+    return index;
+}
+
+
+
+void main() {
+    //broadcasts input by duplicating
+    const uint index = gl_GlobalInvocationID.x;
+    
+
+    uint[N] coords;
+    coords = unravel_index(index, SHAPE_OUT);
+    
+    for(int i=0; i<N; i++){
+        //set coords to zero where shapes are not equal
+        coords[i] *= uint(SHAPE_OUT[i]==SHAPE_IN[i]);
+    }
+    
+    const uint index_a = ravel_coords(coords, SHAPE_IN);
+    result[index] = in_a[index_a];
+}

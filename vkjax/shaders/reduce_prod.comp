@@ -14,10 +14,9 @@ void main() {
     const uint index           = gl_GlobalInvocationID.x;
     const uint in_a_offset     = index*OFFSET_STRIDE;
 
-    const float neg_infinity = uintBitsToFloat(0xFF800000);
-    float maxval = neg_infinity;
+    float val = 1.0;
     for(int i=0; i<N; i++){
-        maxval = max(maxval, in_a[in_a_offset + i*STRIDE]);
+        val = val * in_a[in_a_offset + i*STRIDE];
     }
-    result[index] = maxval;
+    result[index] = val;
 }

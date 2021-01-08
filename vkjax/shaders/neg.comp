@@ -1,0 +1,12 @@
+#version 450
+
+layout (local_size_x = 1) in;
+
+
+layout(set = 0, binding = 0) buffer bout { float result[]; };
+layout(set = 0, binding = 1) buffer bina { float in_a[]; };
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+    result[index] = - in_a[index];
+}
