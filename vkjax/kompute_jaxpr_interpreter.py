@@ -12,6 +12,12 @@ class Buffer(tp.NamedTuple):
     dtype  : np.dtype
     shape  : tp.Tuple
 
+    def numpy(self):
+        array = self.tensor.numpy()
+        #the tensor might be larger than the shape it represents
+        n     = int(np.prod(self.shape))
+        array = array[:n].reshape(self.shape)
+        return array
 
 class JaxprInterpreter:
     def __init__(self, jaxpr:jax.core.ClosedJaxpr, static_argnums=()):
@@ -51,7 +57,7 @@ class JaxprInterpreter:
                 raise NotImplementedError(eq)
             method(eq)
 
-    def run(self, *X):
+    def run(self, *X, return_all=False):
         '''Executes a previously recorded sequence with actual data'''
         input_tensors = [self.get_or_create_buffer(var).tensor for var in self.jaxpr.jaxpr.invars]
         X             = jax.tree_leaves([x for i,x in enumerate(X) if i not in self.static_argnums])
@@ -67,13 +73,20 @@ class JaxprInterpreter:
         self.sequence.eval()
         
         output_bufs    = [self.get_or_create_buffer(var) for var in self.jaxpr.jaxpr.outvars]
-        output_values  = [var.tensor.numpy().reshape(var.shape) for var in output_bufs]
+        output_values  = [buf.numpy() for buf in output_bufs]
         output_values  = [np.asarray(x, dtype=var.aval.dtype) for x,var in zip(output_values, self.jaxpr.jaxpr.outvars)]
         output_values  = tuple(output_values)
 
         if len(output_values)==1:
             output_values = output_values[0]
-        return output_values
+        
+        if not return_all:
+            return output_values
+        else:
+            all_tensors = [b.tensor for b in self.buffers.values() if b is not None]
+            self.mgr.eval_tensor_sync_local_def(all_tensors)
+            all_arrays = [(var, buf.numpy() if buf is not None else None) for var,buf in self.buffers.items()]
+            return output_values, dict(all_arrays)
 
 
 
@@ -132,23 +145,23 @@ class JaxprInterpreter:
 
     
     def broadcast(self, buf:Buffer, newvar:jax.core.Var):
-        #NOTE currently only supporting broadcasting where the last dimensions are equal
-        #e.g:  (1,1,8,16) -> (4,5,8,16) is ok, so is () -> (4,5,8,16)
-        #but not (1,1,8,1) -> (4,5,8,16)
-        stripped_dims = len(buf.shape)-np.searchsorted(buf.shape, 2)
-        newdims = len(newvar.aval.shape)
-        assert (buf.shape[len(buf.shape)-stripped_dims:]==newvar.aval.shape[(newdims-stripped_dims):])
-
+        shape_in  = np.ones(len(newvar.aval.shape), dtype=int)
+        for i,(olddim,newdim) in enumerate(zip(buf.shape[::-1], newvar.aval.shape[::-1])):
+            if olddim!=newdim and olddim!=1:
+                raise ValueError(f'Cannot broadcast from {buf.shape} to {newvar.aval}')
+            shape_in[-i-1] = olddim
+        
         #FIXME: this should not be a shader call
         outbuf = self.get_or_create_buffer(newvar)
-        N = int(np.prod(buf.shape))
-        shader_bytes = shaders.get_shader('broadcast', N=N)
+        shape_in  = ','.join(map(str, shape_in))
+        shape_out = ','.join(map(str, outbuf.shape))
+        n         = len(outbuf.shape)
+        shader_bytes = shaders.get_shader('broadcast_in_dim', N=n, SHAPE_IN=shape_in, SHAPE_OUT=shape_out)
         self.sequence.record_algo_data([outbuf.tensor, buf.tensor], shader_bytes)
         return outbuf
 
 
     def broadcast_in_dim(self, equation:jax.core.JaxprEqn):
-        #print(equation, equation.invars[0].aval, equation.outvars[0].aval)
         #assert broadcast_dimensions are sorted
         assert np.all(np.diff(equation.params['broadcast_dimensions'])>0)
         invar  = equation.invars[0]

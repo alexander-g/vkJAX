@@ -128,6 +128,7 @@ param_matrix = [
 
     (div0, 'div0 x/y',                  [np.random.random([2,32,32,3]), 255.0]),
     (sub0, 'sub0 x-y',                  [np.random.random([2,32,32,3]), 255.0]),
+    (sub0, 'sub0 (2,10)-(2,1)',         [np.random.random([2,10]), np.random.random([2,1])]),
     (mul0, 'mul0 x*y',                  [np.random.random([2,32,32,3]), 255.0]),
 
     #(reshape0, 'reshape0',              [np.random.random([2,32,32]) ] ),
