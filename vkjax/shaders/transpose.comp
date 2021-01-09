@@ -13,7 +13,7 @@ void main() {
     const uint M = {{M}};
     
     const uint index = gl_GlobalInvocationID.x;
-    const uint row_a = index / N;
-    const uint col_a = index % N;
-    result[index] = in_a[col_a*N + row_a];
+    const uint row = index / N;
+    const uint col = index % N;
+    result[index] = in_a[col*M + row];
 }

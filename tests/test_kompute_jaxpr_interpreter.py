@@ -189,7 +189,8 @@ param_matrix = [
 
     (add_any0, 'add_any0',              [np.random.random([32,32]), np.random.random([32,32])]),
 
-    (transpose0, 'random([N,M]).T',     [np.random.random([32,32])]),
+    (transpose0, 'random([N,N]).T',     [np.random.random([32,32])]),
+    (transpose0, 'random([N,M]).T',     [np.random.random([32,65])]),
 ]
 
 

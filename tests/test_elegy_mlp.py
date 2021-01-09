@@ -118,4 +118,4 @@ def test_basic_training():
     assert all(jax.tree_leaves(jax.tree_multimap(lambda a,b: np.shape(a)==np.shape(b), jax.tree_leaves(ypred), jax.tree_leaves(ytrue))))
     
     #XXX: atol value is quite high
-    assert all(jax.tree_leaves(jax.tree_multimap(lambda a,b: np.allclose(a,b, atol=1e-2), jax.tree_leaves(ypred), jax.tree_leaves(ytrue) )))
+    assert all(jax.tree_leaves(jax.tree_multimap(lambda a,b: np.allclose(a,b, atol=1e-3), jax.tree_leaves(ypred), jax.tree_leaves(ytrue) )))
