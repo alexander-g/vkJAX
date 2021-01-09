@@ -166,7 +166,7 @@ class JaxprInterpreter:
             outbuf    = self.get_or_create_buffer(outvar)
             shape_in  = np.ones(len(outbuf.shape), dtype=int)
             for i,bcastdim in enumerate(equation.params['broadcast_dimensions']):
-                shape_in[bcastdim] = outbuf.shape[i]
+                shape_in[bcastdim] = inbuf.shape[i]
             shape_in  = ','.join(map(str, shape_in))
             shape_out = ','.join(map(str, outbuf.shape))
             n         = len(outbuf.shape)

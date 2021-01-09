@@ -25,7 +25,7 @@ class MLP(elegy.Module):
             jax.nn.relu,
             elegy.nn.Linear(self.n2),
             jax.nn.relu,
-            elegy.nn.Linear(10),
+            elegy.nn.Linear(10, b_init=elegy.initializers.RandomNormal()),
         )
 
         return mlp(image)
