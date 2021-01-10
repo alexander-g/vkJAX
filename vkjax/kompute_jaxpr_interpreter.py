@@ -66,8 +66,7 @@ class JaxprInterpreter:
             input_tensor.set_data(np.ravel(x))
         
         if len(input_tensors)>0:
-            #XXX: although sequence already contains sync_device, data is not transferred
-            #if there are no operations between input and output
+            #transfer input data to device
             self.mgr.eval_tensor_sync_device_def(input_tensors)
 
         self.sequence.eval()
@@ -257,7 +256,7 @@ class JaxprInterpreter:
                     initial_value = initial_value.astype(dtype)
             tensor = kp.Tensor( np.ravel(initial_value) )
             self.mgr.eval_tensor_create_def([tensor])
-            self.sequence.record_tensor_sync_device([tensor])
+            self.mgr.eval_tensor_sync_device_def([tensor])
             self.buffers[varhash] = Buffer(tensor, dtype, var.aval.shape)
         return self.buffers[varhash]
     
