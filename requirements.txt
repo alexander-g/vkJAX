@@ -2,3 +2,5 @@ jax
 jaxlib
 #kp
 git+https://github.com/alexander-g/vulkan-kompute.git
+
+pyshaderc
