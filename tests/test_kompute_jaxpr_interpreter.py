@@ -203,7 +203,7 @@ def test_matrix_kompute_interpreter(f, desc, args):
     print(jaxpr)
     interpreter = vkji.JaxprInterpreter(jaxpr)
 
-    y     = interpreter.run(*args)
+    y     = interpreter.run(*args, profile=False)
     ytrue = f(*args)
 
     print(y)

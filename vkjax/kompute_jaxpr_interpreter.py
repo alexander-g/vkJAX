@@ -31,7 +31,8 @@ class JaxprInterpreter:
 
         self.all_ops = self.analyze_jaxpr(jaxpr.jaxpr)
         for op in self.all_ops:
-            self.sequence.record_algo_data(op.tensors, op.shader)
+            workgroup = (len(op.tensors[0])//32,1,1)
+            self.sequence.record_algo_data(op.tensors, op.shader, workgroup)
     
         self.output_tensors = [self.get_or_create_buffer(var).tensor for var in jaxpr.jaxpr.outvars]
         self.sequence.record_tensor_sync_local(self.output_tensors)
@@ -59,7 +60,7 @@ class JaxprInterpreter:
         X             = jax.tree_leaves([x for i,x in enumerate(X) if i not in self.static_argnums])
         assert len(input_tensors) == len(X)
         for input_tensor,x in zip(input_tensors,X):
-            input_tensor.set_data(np.ravel(x))
+            input_tensor.set_data(maybe_pad(x))
         
         if len(input_tensors)>0:
             #transfer input data to device
@@ -112,7 +113,11 @@ class JaxprInterpreter:
                     initial_value = np.empty((1,), dtype)
                 if initial_value.dtype != dtype:
                     initial_value = initial_value.astype(dtype)
-            tensor = kp.Tensor( np.ravel(initial_value) )
+            
+            #pad to (currently) 32 if needed
+            initial_value = maybe_pad(initial_value)
+
+            tensor = kp.Tensor( initial_value )
             self.mgr.eval_tensor_create_def([tensor])
             self.mgr.eval_tensor_sync_device_def([tensor])
             self.buffers[varhash] = ops.Buffer(tensor, dtype, var.aval.shape)
@@ -122,10 +127,24 @@ class JaxprInterpreter:
     def profiling_eval(self):
         timings = []
         for op in self.all_ops:
+            seq = self.mgr.create_sequence()
+            seq.begin()
+            workgroup = (len(op.tensors[0])//32,1,1)
+            seq.record_algo_data(op.tensors, op.shader, workgroup)
+            seq.end()
+
             t0 = time.time()
-            self.mgr.eval_algo_data_def(op.tensors, op.shader)
+            seq.eval()
             t1 = time.time()
             timings.append(t1-t0)
         self.mgr.eval_tensor_sync_local_def(self.output_tensors)
         return timings
 
+
+
+def maybe_pad(x, pad_to=32):
+    x          = np.ravel(x)
+    remainder  = x.size % pad_to
+    if remainder != 0:
+        x = np.pad(x, (0,pad_to-remainder))
+    return x
