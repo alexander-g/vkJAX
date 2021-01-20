@@ -1,10 +1,10 @@
 #version 450
 
-layout (local_size_x = 1) in;
+layout (local_size_x = 32) in;
 
-layout(set = 0, binding = 0) buffer bout { float result[]; };
-layout(set = 0, binding = 1) buffer bina { float in_a[]; };
-layout(set = 0, binding = 2) buffer binb { float in_b[]; };
+layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };
+layout(set = 0, binding = 2) readonly  buffer binb { float in_b[]; };
 
 void main() {
     //constants injected in python
@@ -15,7 +15,7 @@ void main() {
 
     const uint i0 = uint(in_b[0]);
     
-    const uint index_a = index*M + i0;
+    const uint index_a = min(index*M + i0, N*M);
 
     result[index] = in_a[index_a];
 }

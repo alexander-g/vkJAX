@@ -1,10 +1,10 @@
-import os, tempfile, subprocess
+import os
 
 import vkjax
+import pyshaderc
 
 VKJAX_ROOT  = os.path.dirname(vkjax.__file__)
 SHADERS_DIR = os.path.join(VKJAX_ROOT, 'shaders')
-print(SHADERS_DIR)
 
 
 def get_shader(name:str, **constants):
@@ -14,16 +14,8 @@ def get_shader(name:str, **constants):
     shader_str = open(shader_file).read()
     shader_str = preformat(shader_str).format(**constants) 
 
-    tmpdir = tempfile.TemporaryDirectory(prefix='delete_me_')
-    fname  = os.path.join(tmpdir.name,'shader.comp')
-    open(fname,'w').write(shader_str)
-
-
-    sprivname = fname.replace('shader.comp', 'comp.spv')
-    cmd = f'./glslangValidator -V {fname} -o {sprivname}'
-    if subprocess.Popen(cmd, shell=True).wait() != 0:
-        raise RuntimeError('GLSL compilation failed for shader '+name)
-    spirv     = open(sprivname, 'rb').read()
+    glsl_bytes = bytes(shader_str, encoding='utf8')
+    spirv      = pyshaderc.compile_into_spirv(glsl_bytes, 'comp', filepath='', optimization='size')
     return spirv
 
 

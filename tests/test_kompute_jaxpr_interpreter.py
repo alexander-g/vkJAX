@@ -7,6 +7,12 @@ import jax, jax.numpy as jnp, numpy as np
 import pytest
 
 
+seed = np.random.randint(0, 1000000)
+seed = 508643
+np.random.seed(seed)
+
+
+
 def noop(x): return x
 
 def add0(x): return x+x
@@ -25,6 +31,8 @@ def broadcast0(x): return jax.lax.broadcast_in_dim(x, shape=(4,), broadcast_dime
 def broadcast1(x): return jax.lax.broadcast_in_dim(x+1, shape=(4,1,1), broadcast_dimensions=(0,))
 def broadcast2(x): 
     return jax.lax.broadcast_in_dim(x, shape=x.shape+(32,), broadcast_dimensions=tuple(np.arange(len(x.shape))))
+def broadcast3(x): 
+    return jax.lax.broadcast_in_dim(x, shape=(32,)+x.shape, broadcast_dimensions=(1,))
 
 def dot0(x,y): return jnp.dot(x,y)
 dot1_const = np.random.random([100,32]).astype(np.float64)
@@ -126,6 +134,7 @@ param_matrix = [
 
     (div0, 'div0 x/y',                  [np.random.random([2,32,32,3]), 255.0]),
     (sub0, 'sub0 x-y',                  [np.random.random([2,32,32,3]), 255.0]),
+    (sub0, 'sub0 (2,10)-(2,1)',         [np.random.random([2,10]), np.random.random([2,1])]),
     (mul0, 'mul0 x*y',                  [np.random.random([2,32,32,3]), 255.0]),
 
     #(reshape0, 'reshape0',              [np.random.random([2,32,32]) ] ),
@@ -133,8 +142,10 @@ param_matrix = [
     (broadcast0, 'broadcast scalar',    [np.random.random()]),
     (broadcast1, 'broadcast 1D->3D',    [np.random.random(4)]),
     (broadcast2, 'broadcast append',    [np.random.random(4)]),
+    (broadcast3, '(128)->(32,128)',     [np.random.random(128)]),
 
     (dot0, 'dot0 x@y',                  [np.random.random([2,100]), np.random.random([100,32])] ),
+    #(dot0, 'dot0 x@y',                  [np.random.random([2,256])*256-128, np.random.random([256,32])*256-128] ),
     (dot1, 'dot1 x@const',              [np.random.random([2,100])] ),
     (dot_general0, 'dot axes=(0,0)',    [np.random.random([100,2]), np.random.random([100,32])] ),
     (dot_general1, 'dot axes=(1,1)',    [np.random.random([2,100]), np.random.random([32,100])] ),
@@ -185,19 +196,21 @@ param_matrix = [
 
     (add_any0, 'add_any0',              [np.random.random([32,32]), np.random.random([32,32])]),
 
-    (transpose0, 'random([N,M]).T',     [np.random.random([32,32])]),
+    (transpose0, 'random([N,N]).T',     [np.random.random([32,32])]),
+    (transpose0, 'random([N,M]).T',     [np.random.random([32,65])]),
 ]
 
 
 @pytest.mark.parametrize("f,desc,args", param_matrix)
 def test_matrix_kompute_interpreter(f, desc, args):
     print(f'==========TEST START: {desc}==========')
+    print(f'**********RANDOM SEED: {seed}*********')
     args = jax.tree_map(jnp.asarray, args)
     jaxpr = jax.make_jaxpr(f)(*args)
     print(jaxpr)
     interpreter = vkji.JaxprInterpreter(jaxpr)
 
-    y     = interpreter.run(*args)
+    y     = interpreter.run(*args, profile=False)
     ytrue = f(*args)
 
     print(y)

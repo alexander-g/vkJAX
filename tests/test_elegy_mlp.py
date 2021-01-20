@@ -25,7 +25,7 @@ class MLP(elegy.Module):
             jax.nn.relu,
             elegy.nn.Linear(self.n2),
             jax.nn.relu,
-            elegy.nn.Linear(10),
+            elegy.nn.Linear(10, b_init=elegy.initializers.RandomNormal()),
         )
 
         return mlp(image)
@@ -76,9 +76,10 @@ def test_scce_value_and_grad():
 
 
 def test_basic_training():
-    x = np.random.random([2,32,32,3]).astype(np.float32)
-    y = np.random.randint(0,10, size=2)
-    #y = np.random.random([2,10]).astype(np.float32) #for mae
+    B = 8
+    x = np.random.random([B,32,32,3]).astype(np.float32)
+    y = np.random.randint(0,10, size=B)
+    #y = np.random.random([B,10]).astype(np.float32) #for mae
 
     mlp_module = MLP()
     mlp_model  = elegy.Model(mlp_module,
@@ -109,13 +110,77 @@ def test_basic_training():
     _set_state_fn(state)
 
 
-    #import pickle
-    #open('ypred.pkl', 'wb').write(pickle.dumps(ypred))
-    #open('ytrue.pkl', 'wb').write(pickle.dumps(ytrue))
-
     assert jax.tree_structure(ypred) == jax.tree_structure(ytrue)
-
     assert all(jax.tree_leaves(jax.tree_multimap(lambda a,b: np.shape(a)==np.shape(b), jax.tree_leaves(ypred), jax.tree_leaves(ytrue))))
-    
-    #XXX: atol value is quite high
-    assert all(jax.tree_leaves(jax.tree_multimap(lambda a,b: np.allclose(a,b, atol=1e-2), jax.tree_leaves(ypred), jax.tree_leaves(ytrue) )))
+    assert all(jax.tree_leaves(jax.tree_multimap(lambda a,b: np.allclose(a,b, atol=1e-8), jax.tree_leaves(ypred), jax.tree_leaves(ytrue) )))
+
+    #deep inspection of inner variables
+    state = _get_state_fn()
+    _, envtrue = eval_jaxpr(jaxpr.jaxpr, jaxpr.literals, *jax.tree_leaves(state[2:]), x, y, return_env=True)
+    _, envpred = interpreter.run(*state, x,y, return_all=True)
+    #atol higher than default
+    assert np.all([safe_allclose(envpred.get(k, None), vtrue, atol=1e-6)  for k,vtrue in envtrue.items()])
+
+
+
+
+
+
+
+from jax import core
+from jax import lax
+from jax.util import safe_map
+
+#from https://jax.readthedocs.io/en/latest/notebooks/Writing_custom_interpreters_in_Jax.html, modified
+def eval_jaxpr(jaxpr, consts, *args, return_env=False):
+  # Mapping from variable -> value
+  env = {}
+
+  def read(var):
+    # Literals are values baked into the Jaxpr
+    if type(var) is core.Literal:
+      return var.val
+    return env[var]
+
+  def write(var, val):
+    env[var] = val
+
+  # Bind args and consts to environment
+  write(core.unitvar, core.unit)
+  safe_map(write, jaxpr.invars, args)
+  safe_map(write, jaxpr.constvars, consts)
+
+  # Loop through equations and evaluate primitives using `bind`
+  for eqn in jaxpr.eqns:
+    # Read inputs to equation from environment
+    invals = safe_map(read, eqn.invars)
+    if eqn.primitive.name=='xla_call':
+        outvals, innerenv = eval_jaxpr(eqn.params['call_jaxpr'], [], *invals, return_env=True)
+        env.update(innerenv)
+    else:
+        # `bind` is how a primitive is called
+        outvals = eqn.primitive.bind(*invals, **eqn.params)
+    # Primitives may return multiple outputs or not
+    if not eqn.primitive.multiple_results:
+      outvals = [outvals]
+    # Write the results of the primitive into the environment
+    safe_map(write, eqn.outvars, outvals)
+  # Read the final result of the Jaxpr from the environment
+  if return_env:
+        return safe_map(read, jaxpr.outvars), env
+  else:
+        return safe_map(read, jaxpr.outvars)
+
+def safe_allclose(x,y, *args, **kwargs):
+    if x is None and isinstance(y, jax.core.Unit):
+        return True
+    if np.any(np.isnan(y)):
+        return True
+    return np.allclose(x,y, *args, **kwargs)
+
+def safe_abs_max_error(x,y):
+    if x is None and isinstance(y, jax.core.Unit):
+        return None
+    if np.shape(x)==(0,) or np.shape(y)==(0,):
+        return None
+    return np.abs(x-y).max()
