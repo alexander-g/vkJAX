@@ -355,3 +355,33 @@ convert_element_type = noop
 #not relevant for us i think
 stop_gradient        = noop
 
+
+
+
+def conv_general_dilated(self, equation:jax.core.JaxprEqn):
+    #assert equation.params['padding']             == ((0,0),(0,0))
+    assert equation.params['lhs_dilation']        == (1,1)
+    assert equation.params['rhs_dilation']        == (1,1)
+    assert equation.params['window_strides']      == (1,1)
+    assert equation.params['precision']           == None
+    assert equation.params['batch_group_count']   == 1
+    assert equation.params['feature_group_count'] == 1
+    assert len(equation.outvars[0].aval.shape)    == 4  #2D conv
+
+    shader_consts = dict()
+    shader_consts['N']           = 4;   #number of dimensions
+    shader_consts['SHAPE_A']     = ','.join(map(str,equation.invars[0].aval.shape))
+    shader_consts['SHAPE_B']     = ','.join(map(str,equation.invars[1].aval.shape))
+    shader_consts['SHAPE_OUT']   = ','.join(map(str,equation.outvars[0].aval.shape))
+    dim_numbers = equation.params['dimension_numbers']
+    shader_consts['SPEC_LHS']    = ','.join(map(str, dim_numbers.lhs_spec))
+    shader_consts['SPEC_RHS']    = ','.join(map(str, dim_numbers.rhs_spec))
+    shader_consts['SPEC_OUT']    = ','.join(map(str, dim_numbers.out_spec))
+    shader_consts['PADDING']     = f'{equation.params["padding"][0][0]},{equation.params["padding"][1][0]}'
+    
+    inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
+
+    shader_bytes = shaders.get_shader('conv2d', **shader_consts)
+    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
+

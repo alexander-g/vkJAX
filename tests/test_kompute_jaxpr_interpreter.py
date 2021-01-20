@@ -8,7 +8,6 @@ import pytest
 
 
 seed = np.random.randint(0, 1000000)
-seed = 508643
 np.random.seed(seed)
 
 
