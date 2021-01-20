@@ -7,11 +7,12 @@ layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };
 layout(set = 0, binding = 2) readonly  buffer binb { float in_b[]; };
 
 void main() {
-    //constants injectec in python
+    //constants injected in python
     const uint COLS_OUT = {{COLS_OUT}};
+    const uint SIZE_OUT = {{SIZE_OUT}};
     const uint COLS_A   = {{COLS_A}};
     const uint COLS_B   = {{COLS_B}};
-    const uint index = gl_GlobalInvocationID.x;
+    const uint index    = min(gl_GlobalInvocationID.x, SIZE_OUT-1);
 
 
     const uint row     = index / COLS_OUT;
@@ -19,6 +20,5 @@ void main() {
     const uint a_or_b  = uint( col >= COLS_A );
     const uint index_a = row*COLS_A + col;
     const uint index_b = row*COLS_B + (col-COLS_A);
-    result[index]      = ((1-a_or_b) * in_a[index_a])   +   (a_or_b * in_b[index_b]);
-    //result[index] = a_or_b;
+    result[index]      = ((1-a_or_b) * in_a[index_a * (1-a_or_b)])   +   (a_or_b * in_b[index_b * a_or_b]);
 }

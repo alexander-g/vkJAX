@@ -7,6 +7,12 @@ import jax, jax.numpy as jnp, numpy as np
 import pytest
 
 
+seed = np.random.randint(0, 1000000)
+seed = 508643
+np.random.seed(seed)
+
+
+
 def noop(x): return x
 
 def add0(x): return x+x
@@ -198,6 +204,7 @@ param_matrix = [
 @pytest.mark.parametrize("f,desc,args", param_matrix)
 def test_matrix_kompute_interpreter(f, desc, args):
     print(f'==========TEST START: {desc}==========')
+    print(f'**********RANDOM SEED: {seed}*********')
     args = jax.tree_map(jnp.asarray, args)
     jaxpr = jax.make_jaxpr(f)(*args)
     print(jaxpr)

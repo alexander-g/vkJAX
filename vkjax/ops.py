@@ -270,8 +270,9 @@ def concatenate(self, equation:jax.core.JaxprEqn):
     cols_a   = inbufs[0].shape[-1]
     cols_b   = inbufs[1].shape[-1]
     cols_out = outbuf.shape[-1]
+    size_out = np.prod(outbuf.shape)
 
-    shader_bytes = shaders.get_shader(equation.primitive.name, COLS_A=cols_a, COLS_B=cols_b, COLS_OUT=cols_out)
+    shader_bytes = shaders.get_shader(equation.primitive.name, COLS_A=cols_a, COLS_B=cols_b, COLS_OUT=cols_out, SIZE_OUT=size_out)
     return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
 
 
