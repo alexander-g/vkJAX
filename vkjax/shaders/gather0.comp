@@ -16,7 +16,7 @@ void main() {
     const uint i0 = uint(in_b[index*2]);
     const uint i1 = uint(in_b[index*2+1]);
     
-    const uint index_a = i0*M + i1;
+    const uint index_a = min(i0*M + i1, N*M-1);
 
     result[index] = in_a[index_a];
 }

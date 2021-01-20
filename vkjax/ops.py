@@ -22,6 +22,7 @@ class Buffer(tp.NamedTuple):
 class Op(tp.NamedTuple):
     tensors:  tp.List[kp.Tensor]
     shader:   bytes
+    equation : jax.core.JaxprEqn
 
 
 
@@ -43,7 +44,7 @@ def element_wise_binary_op(self, equation:jax.core.JaxprEqn):
     
     outbuf = self.get_or_create_buffer(outvar)
     shader_bytes = shaders.get_shader(equation.primitive.name)
-    return bcast_ops+[Op(intensors+[outbuf.tensor], shader_bytes)]
+    return bcast_ops+[Op(intensors+[outbuf.tensor], shader_bytes, equation)]
 
 add = element_wise_binary_op
 sub = element_wise_binary_op
@@ -74,7 +75,7 @@ def element_wise_unary_op(self, equation:jax.core.JaxprEqn):
     inbuf  = self.get_or_create_buffer(invar)
     outbuf = self.get_or_create_buffer(outvar)
     shader_bytes = shaders.get_shader(equation.primitive.name)
-    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes)]
+    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
 
 exp = element_wise_unary_op
 log = element_wise_unary_op
@@ -97,7 +98,7 @@ def broadcast(self, buf:Buffer, newvar:jax.core.Var):
     shape_out = ','.join(map(str, outbuf.shape))
     n         = len(outbuf.shape)
     shader_bytes = shaders.get_shader('broadcast_in_dim', N=n, SHAPE_IN=shape_in, SHAPE_OUT=shape_out)
-    return outbuf, Op([outbuf.tensor, buf.tensor], shader_bytes)
+    return outbuf, Op([outbuf.tensor, buf.tensor], shader_bytes, 'broadcast')
 
 
 def broadcast_in_dim(self, equation:jax.core.JaxprEqn):
@@ -124,7 +125,7 @@ def broadcast_in_dim(self, equation:jax.core.JaxprEqn):
         shape_out = ','.join(map(str, outbuf.shape))
         n         = len(outbuf.shape)
         shader_bytes = shaders.get_shader('broadcast_in_dim', N=n, SHAPE_IN=shape_in, SHAPE_OUT=shape_out)
-        return [Op([outbuf.tensor, inbuf.tensor], shader_bytes)]
+        return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
 
 def xla_call(self, equation:jax.core.JaxprEqn):
     assert equation.params['device'] == None
@@ -203,14 +204,14 @@ def dot_general(self, equation:jax.core.JaxprEqn):
     cdim_b  = dim_numbers[0][1][0]
 
     shader_bytes = shaders.get_shader(equation.primitive, N=N, C=C, M=M, CDIM_A=cdim_a, CDIM_B=cdim_b)
-    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes)]
+    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
 
 def iota(self, equation:jax.core.JaxprEqn):
     assert equation.params['dimension'] == 0
     outbuf = self.get_or_create_buffer(equation.outvars[0])
     shader_bytes = shaders.get_shader(equation.primitive)
     #self.sequence.record_algo_data([outbuf.tensor], shader_bytes)
-    return [Op([outbuf.tensor], shader_bytes)]
+    return [Op([outbuf.tensor], shader_bytes, equation)]
 
 def reduce_op(self, equation:jax.core.JaxprEqn):
     axes  = equation.params['axes']
@@ -233,7 +234,7 @@ def reduce_op(self, equation:jax.core.JaxprEqn):
     offset_stride = 1 if axes[0]==0 else inbuf.shape[1]
 
     shader_bytes = shaders.get_shader(equation.primitive.name, N=n, STRIDE=stride, OFFSET_STRIDE=offset_stride)
-    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes)]
+    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
 
 reduce_max  = reduce_op
 reduce_sum  = reduce_op
@@ -250,7 +251,7 @@ def select(self, equation:jax.core.JaxprEqn):
     outbuf = self.get_or_create_buffer(equation.outvars[0])
 
     shader_bytes = shaders.get_shader(equation.primitive.name)
-    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes)]
+    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
 
 def concatenate(self, equation:jax.core.JaxprEqn):
     #currently only support for concatenation of 2 parameters
@@ -271,7 +272,7 @@ def concatenate(self, equation:jax.core.JaxprEqn):
     cols_out = outbuf.shape[-1]
 
     shader_bytes = shaders.get_shader(equation.primitive.name, COLS_A=cols_a, COLS_B=cols_b, COLS_OUT=cols_out)
-    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes)]
+    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
 
 
 def gather(self, equation:jax.core.JaxprEqn):
@@ -287,7 +288,7 @@ def gather(self, equation:jax.core.JaxprEqn):
 
         shader_bytes = shaders.get_shader('gather0', N=inbufs[0].shape[0], M=inbufs[0].shape[1])
         #self.sequence.record_algo_data([b.tensor for b in [outbuf]+inbufs], shader_bytes)
-        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes)]
+        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
     elif equation.params['dimension_numbers'] == d1 and equation.params['slice_sizes'][1] == 1:
         #equivalent to x[:,i] with x.shape=(B,N), i.shape=(1,), i range 0...N
         inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
@@ -297,7 +298,7 @@ def gather(self, equation:jax.core.JaxprEqn):
         assert inbufs[1].shape==(1,)
 
         shader_bytes = shaders.get_shader('gather1', N=inbufs[0].shape[0], M=inbufs[0].shape[1])
-        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes)]
+        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
     else:
         raise NotImplementedError(equation)
 
@@ -315,7 +316,7 @@ def scatter_add(self, equation:jax.core.JaxprEqn):
         assert inbufs[2].shape[0] == inbufs[0].shape[0]
 
         shader_bytes = shaders.get_shader('scatter0', N=inbufs[0].shape[0], M=inbufs[0].shape[1])
-        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes)]
+        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
     elif equation.params['dimension_numbers'] == d1:
         #equivalent to x[:,i]+=u with x.shape=(B,N), i.shape=(1,), u.shape=(B,)
         inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
@@ -326,7 +327,7 @@ def scatter_add(self, equation:jax.core.JaxprEqn):
         assert inbufs[1].shape==(1,)
 
         shader_bytes = shaders.get_shader('scatter1', N=inbufs[0].shape[0], M=inbufs[0].shape[1])
-        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes)]
+        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
     else:
         raise NotImplementedError(equation)
 
@@ -337,7 +338,7 @@ def transpose(self, equation:jax.core.JaxprEqn):
     outbuf = self.get_or_create_buffer(equation.outvars[0])
 
     shader_bytes = shaders.get_shader(equation.primitive.name, N=inbuf.shape[0], M=inbuf.shape[1])
-    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes)]
+    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
 
 
 def noop(self, equation:jax.core.JaxprEqn):
