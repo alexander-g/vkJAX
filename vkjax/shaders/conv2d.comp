@@ -18,6 +18,8 @@ const uint SPEC_RHS[N]  = uint[]( {{SPEC_RHS}} );
 const uint SPEC_OUT[N]  = uint[]( {{SPEC_OUT}} );
 //padding (only low padding; left/top)
 const uvec2 PADDING     = uvec2( {{PADDING}} );
+//strides
+const uvec2 STRIDES     = uvec2( {{STRIDES}} );
 
 
 int[N] unravel_index(uint index, uint[N] shape){
@@ -59,12 +61,14 @@ void main() {
             for(int i1=0; i1<SHAPE_B[SPEC_RHS[3]]; i1++){             //spatial dimension 1
                 int[N] coords_a, coords_b;
 
-                const int j0 = int(i0) - int(PADDING[0]);
-                const int j1 = int(i1) - int(PADDING[1]);
+                const int j0  = i0 - int(PADDING[0]);
+                const int j1  = i1 - int(PADDING[1]);
+                const int row = coords_out[SPEC_OUT[2]]*int(STRIDES[0])+j0;
+                const int col = coords_out[SPEC_OUT[3]]*int(STRIDES[1])+j1;
                 coords_a[SPEC_LHS[0]] = coords_out[SPEC_OUT[0]];       //batch dimension
                 coords_a[SPEC_LHS[1]] = c;                             //in feature dimension
-                coords_a[SPEC_LHS[2]] = coords_out[SPEC_OUT[2]]+j0;    //spatial dimension 0
-                coords_a[SPEC_LHS[3]] = coords_out[SPEC_OUT[3]]+j1;    //spatial dimension 1
+                coords_a[SPEC_LHS[2]] = row;                           //spatial dimension 0
+                coords_a[SPEC_LHS[3]] = col;                           //spatial dimension 1
 
                 coords_b[SPEC_RHS[0]] = coords_out[SPEC_OUT[1]];       //out feature dimension
                 coords_b[SPEC_RHS[1]] = c;                             //in feature dimension

@@ -359,13 +359,14 @@ stop_gradient        = noop
 
 
 def conv_general_dilated(self, equation:jax.core.JaxprEqn):
-    #assert equation.params['padding']             == ((0,0),(0,0))
-    assert equation.params['lhs_dilation']        == (1,1)
-    assert equation.params['rhs_dilation']        == (1,1)
-    assert equation.params['window_strides']      == (1,1)
-    assert equation.params['precision']           == None
-    assert equation.params['batch_group_count']   == 1
-    assert equation.params['feature_group_count'] == 1
+    params = equation.params
+    #padding is ok but should be same in all axes
+    #assert np.all(np.ravel(params['padding']) == params['padding'][0][0])
+    assert params['lhs_dilation']        == (1,1)
+    assert params['rhs_dilation']        == (1,1)
+    assert params['precision']           == None
+    assert params['batch_group_count']   == 1
+    assert params['feature_group_count'] == 1
     assert len(equation.outvars[0].aval.shape)    == 4  #2D conv
 
     shader_consts = dict()
@@ -373,11 +374,12 @@ def conv_general_dilated(self, equation:jax.core.JaxprEqn):
     shader_consts['SHAPE_A']     = ','.join(map(str,equation.invars[0].aval.shape))
     shader_consts['SHAPE_B']     = ','.join(map(str,equation.invars[1].aval.shape))
     shader_consts['SHAPE_OUT']   = ','.join(map(str,equation.outvars[0].aval.shape))
-    dim_numbers = equation.params['dimension_numbers']
+    dim_numbers = params['dimension_numbers']
     shader_consts['SPEC_LHS']    = ','.join(map(str, dim_numbers.lhs_spec))
     shader_consts['SPEC_RHS']    = ','.join(map(str, dim_numbers.rhs_spec))
     shader_consts['SPEC_OUT']    = ','.join(map(str, dim_numbers.out_spec))
-    shader_consts['PADDING']     = f'{equation.params["padding"][0][0]},{equation.params["padding"][1][0]}'
+    shader_consts['PADDING']     = f'{params["padding"][0][0]},{params["padding"][1][0]}'
+    shader_consts['STRIDES']     = ','.join(map(str, params["window_strides"]))
     
     inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
     outbuf = self.get_or_create_buffer(equation.outvars[0])
