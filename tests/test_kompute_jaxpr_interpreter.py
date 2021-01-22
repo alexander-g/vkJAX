@@ -44,8 +44,10 @@ def relu0(x): return jax.nn.relu(x)
 
 def reduce_max0(x): return jnp.max(x, axis=0)
 def reduce_max1(x): return jnp.max(x, axis=1)
+def reduce_max2(x): return jnp.max(x, axis=[1,2,5])
 def reduce_sum0(x): return jnp.sum(x, axis=0)
 def reduce_sum1(x): return jnp.sum(x, axis=1)
+def reduce_sum2(x): return jnp.sum(x, axis=[0,1,2])
 def no_reduce0(x):  return jnp.sum(x, axis=())  #fails, like reshape0
 def no_reduce1(x):  return jnp.sum(x+1, axis=())
 def reduce_prod0(x): return jnp.prod(x, axis=0)
@@ -153,10 +155,12 @@ param_matrix = [
     (relu0, 'relu0',                    [np.random.random([32,32,32])-0.5]),
 
     (reduce_max0, 'max(axis=0)',        [np.random.random([32,32])]),
-    (reduce_max1, 'max(axis=1)',        [np.random.random([32,32])]),
+    (reduce_max1, 'max(axis=1)',        [np.random.random([32,32])-1.0]),
+    (reduce_max2, 'max(axis=125)',      [np.random.random([3,33,67,99,4,7])]),
     (reduce_sum0, 'sum(axis=0) 2D',     [np.random.random([32,32])]),
     (reduce_sum0, 'sum(axis=0) 1D',     [np.random.random([32])]),
     (reduce_sum1, 'sum(axis=1)',        [np.random.random([32,32])]),
+    (reduce_sum2, 'sum(axis=012)',      [np.random.random([65,77,22,7])]),
     #(no_reduce0, 'no_reduce0(axis=())', [np.random.random([32])]),
     (no_reduce1, 'no_reduce1(axis=())', [np.random.random([32])]),
     

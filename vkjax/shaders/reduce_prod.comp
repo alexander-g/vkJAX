@@ -6,17 +6,46 @@ layout (local_size_x = 32) in;
 layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
 layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };
 
-void main() {
-    //constants are injected in python
-    const uint N               = {{N}};
-    const uint STRIDE          = {{STRIDE}};
-    const uint OFFSET_STRIDE   = {{OFFSET_STRIDE}};
-    const uint index           = gl_GlobalInvocationID.x;
-    const uint in_a_offset     = index*OFFSET_STRIDE;
+//constants are injected in python
+//number of input dimensions
+const uint N            = {{N}};
+//input shape e.g. (10,20,5,10)
+const uint SHAPE_A[N]   = uint[]( {{SHAPE_A}} );
 
-    float val = 1.0;
-    for(int i=0; i<N; i++){
-        val = val * in_a[in_a_offset + i*STRIDE];
+//output shape: reduced dimensions are 1, e.g. (1,20,1,10)
+const uint SHAPE_OUT[N]   = uint[]( {{SHAPE_OUT}} );
+//dimensions to reduce: 1 where reduced, SHAPE_A otherwise, e.g.(10,1,5,1)
+const uint REDUCE_DIMS[N] = uint[]( {{REDUCE_DIMS}} );
+//product of REDUCE_DIMS e.g. 10*1*5*1 = 50
+const uint REDUCE_SIZE    = {{REDUCE_SIZE}};
+
+//file include: common.glsl
+{{COMMON_GLSL}}
+
+
+
+
+int[N] replace_reduced_indices(int[N] coords0, int[N] coords1){
+    int[N] coords_result;
+    for(uint i=0; i<N; i++){
+        const int dim_is_reduced = int(REDUCE_DIMS[i]==1);
+        coords_result[i]         = coords0[i]*(1-dim_is_reduced) + coords1[i]*dim_is_reduced;
     }
-    result[index] = val;
+    return coords_result;
+}
+
+
+void main() {
+    const uint index           = gl_GlobalInvocationID.x;
+    const int[N] coords_out    = unravel_index(index, SHAPE_OUT);
+    
+    float acc = 1.0;
+    for(uint i=0; i<REDUCE_SIZE; i++){
+        const int[N] coords_it   = unravel_index(i, REDUCE_DIMS);
+        const int[N] coords_a    = replace_reduced_indices(coords_it, coords_out);
+        const uint index_a       = ravel_coords(coords_a, SHAPE_A);
+        acc                     *= in_a[index_a];
+    }
+    
+    result[index] = acc;
 }

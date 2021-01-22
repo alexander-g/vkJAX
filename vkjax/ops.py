@@ -218,22 +218,25 @@ def reduce_op(self, equation:jax.core.JaxprEqn):
     if axes==():
         #strange but can happen -> noop
         return noop(self, equation)
-    assert axes in [(0,), (1,)]
     outvar = equation.outvars[0]
     invar  = equation.invars[0]
-    assert len(outvar.aval.shape) in [1,0]
-    assert len(invar.aval.shape)  in [2,1]
     if len(invar.aval.shape)==1:
         invar.aval.shape = invar.aval.shape+(1,)
 
     inbuf  = self.get_or_create_buffer(invar)
     outbuf = self.get_or_create_buffer(outvar)
+    
+    reduced_shape = [s if i not in axes else 1 for i,s  in enumerate(inbuf.shape)]
+    reduce_dims   = [s if i     in axes else 1 for i,s  in enumerate(inbuf.shape)]
 
-    n             = inbuf.shape[axes[0]]
-    stride        = 1 if axes[0]==1 else invar.aval.shape[1]
-    offset_stride = 1 if axes[0]==0 else inbuf.shape[1]
+    shader_consts = dict()
+    shader_consts['N']           = len(inbuf.shape)
+    shader_consts['SHAPE_A']     = ','.join(map(str,inbuf.shape))
+    shader_consts['SHAPE_OUT']   = ','.join(map(str,reduced_shape))
+    shader_consts['REDUCE_DIMS'] = ','.join(map(str, reduce_dims))
+    shader_consts['REDUCE_SIZE'] = np.prod(reduce_dims)
 
-    shader_bytes = shaders.get_shader(equation.primitive.name, N=n, STRIDE=stride, OFFSET_STRIDE=offset_stride)
+    shader_bytes = shaders.get_shader(equation.primitive.name, **shader_consts)
     return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
 
 reduce_max  = reduce_op
