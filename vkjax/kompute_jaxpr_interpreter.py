@@ -107,10 +107,6 @@ class JaxprInterpreter:
                 initial_value = np.zeros(var.aval.shape, dtype)
             else:
                 assert initial_value.shape == var.aval.shape
-                if initial_value.shape == (0,):
-                    #zero sized array, would cause kompute to segfault
-                    #expand it, but dont update the buffer shape
-                    initial_value = np.empty((1,), dtype)
                 if initial_value.dtype != dtype:
                     initial_value = initial_value.astype(dtype)
             
@@ -145,6 +141,6 @@ class JaxprInterpreter:
 def maybe_pad(x, pad_to=32):
     x          = np.ravel(x)
     remainder  = x.size % pad_to
-    if remainder != 0:
+    if remainder != 0 or x.size==0:
         x = np.pad(x, (0,pad_to-remainder))
     return x

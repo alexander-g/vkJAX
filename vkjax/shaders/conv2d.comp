@@ -1,0 +1,93 @@
+#version 450
+
+layout (local_size_x = 32) in;
+
+layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };   //lhs, image
+layout(set = 0, binding = 2) readonly  buffer binb { float in_b[]; };   //rhs, kernel
+
+
+//constants are injected in python
+const uint N            = {{N}};   //number of dimensions
+      uint SHAPE_A[N]   = uint[]( {{SHAPE_A}} );
+      uint SHAPE_B[N]   = uint[]( {{SHAPE_B}} );
+const uint SHAPE_OUT[N] = uint[]( {{SHAPE_OUT}} );
+//jax.lax.ConvDimensionNumbers
+const uint SPEC_LHS[N]  = uint[]( {{SPEC_LHS}} );
+const uint SPEC_RHS[N]  = uint[]( {{SPEC_RHS}} );
+const uint SPEC_OUT[N]  = uint[]( {{SPEC_OUT}} );
+//padding (only low padding; left/top)
+const ivec2 PADDING     = ivec2( {{PADDING}} );
+//window strides
+const ivec2 STRIDES     = ivec2( {{STRIDES}} );
+//dilation
+const ivec2 DILATE_LHS  = ivec2( {{DILATE_LHS}} );
+const ivec2 DILATE_RHS  = ivec2( {{DILATE_RHS}} );
+
+
+//file include: common.glsl
+{{COMMON_GLSL}}
+
+
+
+int[4] coords_remove_dilation(int[4] coords, ivec2 dilation, uint[4] spec){
+    int[4] new_coords = coords;
+    new_coords[spec[2]] /= dilation[0];
+    new_coords[spec[3]] /= dilation[1];
+    return new_coords;
+}
+
+bool coords_in_dilation(int[4] coords, ivec2 dilation, uint[4] spec){
+    return (coords[spec[2]] % dilation[0])>0 || (coords[spec[3]] % dilation[1])>0;
+}
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+
+    const int[N] coords_out = unravel_index(index, SHAPE_OUT);
+
+    //dilated shapes
+    uint[4] dSHAPE_A = SHAPE_A;
+    uint[4] dSHAPE_B = SHAPE_B;
+    dSHAPE_A[SPEC_LHS[2]] *= DILATE_LHS[0];
+    dSHAPE_A[SPEC_LHS[3]] *= DILATE_LHS[1];
+    dSHAPE_B[SPEC_RHS[2]] *= DILATE_RHS[0];
+    dSHAPE_B[SPEC_RHS[3]] *= DILATE_RHS[1];
+    
+
+    float sum = 0.0;
+    for(int c=0; c<SHAPE_B[SPEC_RHS[1]]; c++){                                     //in feature dimension
+        for(int i0=0; i0<dSHAPE_B[SPEC_RHS[2]]; i0+=DILATE_RHS[0]){                 //spatial dimension 0
+            for(int i1=0; i1<dSHAPE_B[SPEC_RHS[3]]; i1+=DILATE_RHS[1]){             //spatial dimension 1
+                int[N] coords_a, coords_b;
+
+                const int j0 = coords_out[SPEC_OUT[2]] * STRIDES[0] + i0 - PADDING[0];
+                const int j1 = coords_out[SPEC_OUT[3]] * STRIDES[1] + i1 - PADDING[1];
+
+                coords_a[SPEC_LHS[0]] = coords_out[SPEC_OUT[0]];       //batch dimension
+                coords_a[SPEC_LHS[1]] = c;                             //in feature dimension
+                coords_a[SPEC_LHS[2]] = j0;                            //spatial dimension 0
+                coords_a[SPEC_LHS[3]] = j1;                            //spatial dimension 1
+
+                coords_b[SPEC_RHS[0]] = coords_out[SPEC_OUT[1]];       //out feature dimension
+                coords_b[SPEC_RHS[1]] = c;                             //in feature dimension
+                coords_b[SPEC_RHS[2]] = i0;                            //spatial dimension 0
+                coords_b[SPEC_RHS[3]] = i1;                            //spatial dimension 1
+
+                const bool is_oob_a   = is_out_of_bounds(coords_a, dSHAPE_A);
+                const bool is_oob_b   = is_out_of_bounds(coords_b, dSHAPE_B);
+                const bool dilated_a  = coords_in_dilation(coords_a, DILATE_LHS, SPEC_LHS);
+                const bool dilated_b  = coords_in_dilation(coords_b, DILATE_RHS, SPEC_RHS);
+                const bool is_valid   = !(is_oob_a || is_oob_b || dilated_a || dilated_b);
+
+                coords_a              = coords_remove_dilation(coords_a, DILATE_LHS, SPEC_LHS);
+                coords_b              = coords_remove_dilation(coords_b, DILATE_RHS, SPEC_RHS);
+                const uint index_a    = ravel_coords(coords_a, SHAPE_A) * uint(is_valid);
+                const uint index_b    = ravel_coords(coords_b, SHAPE_B) * uint(is_valid);
+                sum                  += in_a[index_a] * in_b[index_b] * float(is_valid);
+
+            }
+        }
+    }
+    result[index] = sum;
+}

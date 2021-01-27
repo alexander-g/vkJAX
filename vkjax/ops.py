@@ -218,22 +218,25 @@ def reduce_op(self, equation:jax.core.JaxprEqn):
     if axes==():
         #strange but can happen -> noop
         return noop(self, equation)
-    assert axes in [(0,), (1,)]
     outvar = equation.outvars[0]
     invar  = equation.invars[0]
-    assert len(outvar.aval.shape) in [1,0]
-    assert len(invar.aval.shape)  in [2,1]
     if len(invar.aval.shape)==1:
         invar.aval.shape = invar.aval.shape+(1,)
 
     inbuf  = self.get_or_create_buffer(invar)
     outbuf = self.get_or_create_buffer(outvar)
+    
+    reduced_shape = [s if i not in axes else 1 for i,s  in enumerate(inbuf.shape)]
+    reduce_dims   = [s if i     in axes else 1 for i,s  in enumerate(inbuf.shape)]
 
-    n             = inbuf.shape[axes[0]]
-    stride        = 1 if axes[0]==1 else invar.aval.shape[1]
-    offset_stride = 1 if axes[0]==0 else inbuf.shape[1]
+    shader_consts = dict()
+    shader_consts['N']           = len(inbuf.shape)
+    shader_consts['SHAPE_A']     = ','.join(map(str,inbuf.shape))
+    shader_consts['SHAPE_OUT']   = ','.join(map(str,reduced_shape))
+    shader_consts['REDUCE_DIMS'] = ','.join(map(str, reduce_dims))
+    shader_consts['REDUCE_SIZE'] = np.prod(reduce_dims)
 
-    shader_bytes = shaders.get_shader(equation.primitive.name, N=n, STRIDE=stride, OFFSET_STRIDE=offset_stride)
+    shader_bytes = shaders.get_shader(equation.primitive.name, **shader_consts)
     return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
 
 reduce_max  = reduce_op
@@ -355,3 +358,48 @@ convert_element_type = noop
 #not relevant for us i think
 stop_gradient        = noop
 
+
+
+
+def conv_general_dilated(self, equation:jax.core.JaxprEqn):
+    params = equation.params
+    assert params['precision']           == None
+    assert params['batch_group_count']   == 1
+    assert params['feature_group_count'] == 1
+    assert len(equation.outvars[0].aval.shape)    == 4  #2D conv
+
+    shader_consts = dict()
+    shader_consts['N']           = 4;   #number of dimensions
+    shader_consts['SHAPE_A']     = ','.join(map(str,equation.invars[0].aval.shape))
+    shader_consts['SHAPE_B']     = ','.join(map(str,equation.invars[1].aval.shape))
+    shader_consts['SHAPE_OUT']   = ','.join(map(str,equation.outvars[0].aval.shape))
+    dim_numbers = params['dimension_numbers']
+    shader_consts['SPEC_LHS']    = ','.join(map(str, dim_numbers.lhs_spec))
+    shader_consts['SPEC_RHS']    = ','.join(map(str, dim_numbers.rhs_spec))
+    shader_consts['SPEC_OUT']    = ','.join(map(str, dim_numbers.out_spec))
+    shader_consts['PADDING']     = f'{params["padding"][0][0]},{params["padding"][1][0]}'
+    shader_consts['STRIDES']     = ','.join(map(str, params["window_strides"]))
+    shader_consts['DILATE_RHS']  = ','.join(map(str, params["rhs_dilation"]))
+    shader_consts['DILATE_LHS']  = ','.join(map(str, params["lhs_dilation"]))
+    
+    inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
+
+    shader_bytes = shaders.get_shader('conv2d', **shader_consts)
+    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
+
+
+
+def rev(self, equation:jax.core.JaxprEqn):
+    inbuf  = self.get_or_create_buffer(equation.invars[0])
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
+
+    reversed_dims = [int(i in equation.params['dimensions']) for i in range(len(inbuf.shape))]
+
+    shader_consts = dict()
+    shader_consts['N']             = len(inbuf.shape)   #number of dimensions
+    shader_consts['SHAPE']         = inbuf.shape
+    shader_consts['REVERSED_DIMS'] = tuple(reversed_dims)
+
+    shader_bytes = shaders.get_shader('rev', **shader_consts)
+    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
