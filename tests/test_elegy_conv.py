@@ -11,7 +11,13 @@ import elegy, optax
 
 class Module0(elegy.Module):
     def call(self, x: jnp.ndarray):
-        x = elegy.nn.Conv2D(77, (3,3), with_bias=True)(x)
+        x = elegy.nn.Conv2D(32, (3,3), stride=(2,2))(x)
+        x = jax.nn.relu(x)
+        x = elegy.nn.Conv2D(32, (3,3), stride=(2,2))(x)
+        x = jax.nn.relu(x)
+        x = elegy.nn.Flatten()(x)
+        x = elegy.nn.Linear(10)(x)
+        
         return x
 
 
@@ -33,6 +39,60 @@ def test_basic_inference0():
     assert np.shape(y) == np.shape(ytrue)
     #XXX: need higher than default atol,
     assert np.allclose(y, ytrue, atol=1e-6)
+
+
+
+
+def test_basic_training():
+    B = 8
+    x = np.random.random([B,32,32,3]).astype(np.float32)
+    y = np.random.randint(0,10, size=B)
+
+    module = Module0()
+    model  = elegy.Model(module,
+                         loss=elegy.losses.SparseCategoricalCrossentropy(from_logits=True),
+                         optimizer=optax.sgd(0.1))
+    model.maybe_initialize(elegy.model.model_base.Mode.train, x,y)
+
+    #XXX: setting RNG to low number because uint32 not yet implemented
+    #everything converted to floats, results in truncation
+    elegy.module.set_rng(elegy.random.RNG(0))
+    
+    train_jit, _get_state_fn, _set_state_fn   = elegy.module.jit(model.train_fn,   modules=model, unwrapped=True)
+    state = _get_state_fn()
+    
+    jaxpr, outshapes = jax.make_jaxpr(train_jit, static_argnums=(0,1), return_shape=True)(*state, x,y)
+    print(jaxpr)
+    _set_state_fn(state)
+
+    interpreter = vkji.JaxprInterpreter(jaxpr, static_argnums=(0,1))
+
+    #state = _get_state_fn()
+    ypred     = interpreter.run(*state, x,y)
+    ypred     = jax.tree_unflatten(jax.tree_structure(outshapes), ypred)
+    #_set_state_fn(state)
+    
+    #state = _get_state_fn()
+    ytrue = train_jit(*state, x,y)
+    _set_state_fn(state)
+
+
+    assert jax.tree_structure(ypred) == jax.tree_structure(ytrue)
+    assert all(jax.tree_leaves(jax.tree_multimap(lambda a,b: np.shape(a)==np.shape(b), jax.tree_leaves(ypred), jax.tree_leaves(ytrue))))
+    #XXX:atol higher than default
+    assert all(jax.tree_leaves(jax.tree_multimap(lambda a,b: np.allclose(a,b, atol=1e-7), jax.tree_leaves(ypred), jax.tree_leaves(ytrue) )))
+
+    #deep inspection of inner variables
+    state = _get_state_fn()
+    _, envtrue = eval_jaxpr(jaxpr.jaxpr, jaxpr.literals, *jax.tree_leaves(state[2:]), x, y, return_env=True)
+    _, envpred = interpreter.run(*state, x,y, return_all=True)
+    #XXX:atol higher than default
+    assert np.all([safe_allclose(envpred.get(k, None), vtrue, atol=1e-6)  for k,vtrue in envtrue.items()])
+
+
+
+
+
 
 
 

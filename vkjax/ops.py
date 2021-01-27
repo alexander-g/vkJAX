@@ -363,10 +363,6 @@ stop_gradient        = noop
 
 def conv_general_dilated(self, equation:jax.core.JaxprEqn):
     params = equation.params
-    #padding is ok but should be same in all axes
-    #assert np.all(np.ravel(params['padding']) == params['padding'][0][0])
-    assert params['lhs_dilation']        == (1,1)
-    assert params['rhs_dilation']        == (1,1)
     assert params['precision']           == None
     assert params['batch_group_count']   == 1
     assert params['feature_group_count'] == 1
@@ -383,6 +379,8 @@ def conv_general_dilated(self, equation:jax.core.JaxprEqn):
     shader_consts['SPEC_OUT']    = ','.join(map(str, dim_numbers.out_spec))
     shader_consts['PADDING']     = f'{params["padding"][0][0]},{params["padding"][1][0]}'
     shader_consts['STRIDES']     = ','.join(map(str, params["window_strides"]))
+    shader_consts['DILATE_RHS']  = ','.join(map(str, params["rhs_dilation"]))
+    shader_consts['DILATE_LHS']  = ','.join(map(str, params["lhs_dilation"]))
     
     inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
     outbuf = self.get_or_create_buffer(equation.outvars[0])
@@ -390,3 +388,18 @@ def conv_general_dilated(self, equation:jax.core.JaxprEqn):
     shader_bytes = shaders.get_shader('conv2d', **shader_consts)
     return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
 
+
+
+def rev(self, equation:jax.core.JaxprEqn):
+    inbuf  = self.get_or_create_buffer(equation.invars[0])
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
+
+    reversed_dims = [int(i in equation.params['dimensions']) for i in range(len(inbuf.shape))]
+
+    shader_consts = dict()
+    shader_consts['N']             = len(inbuf.shape)   #number of dimensions
+    shader_consts['SHAPE']         = inbuf.shape
+    shader_consts['REVERSED_DIMS'] = tuple(reversed_dims)
+
+    shader_bytes = shaders.get_shader('rev', **shader_consts)
+    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
