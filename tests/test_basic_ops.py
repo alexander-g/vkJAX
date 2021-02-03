@@ -1,7 +1,7 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES']=''
 
-import vkjax.kompute_jaxpr_interpreter as vkji
+import vkjax
 
 import jax, jax.numpy as jnp, numpy as np
 import pytest
@@ -61,6 +61,7 @@ def eq1(x):   return x==x.max(axis=-1)
 def exp0(x):  return jnp.exp(x)
 def log0(x):  return jnp.log(x)
 def abs0(x):  return jnp.abs(x)
+def rsqrt0(x): return jax.lax.rsqrt(x)
 
 def iota0():  return jnp.arange(32)
 
@@ -178,6 +179,7 @@ param_matrix = [
     #(log0, 'log(x)',                    [np.random.uniform(0,5,size=[32,32])]), #fails, why? numerical issues?
     (log0, 'log(x+100)',                [np.random.uniform(0,5,size=[32,32])+100]),
     (abs0, 'abs(x)',                    [np.random.random([32,32,32])]),
+    (rsqrt0, 'rsqrt(x)',                [np.random.random([77,40,32])*10]),
 
     (iota0, 'iota0',                    []),
 
@@ -213,9 +215,9 @@ def test_matrix_kompute_interpreter(f, desc, args):
     args = jax.tree_map(jnp.asarray, args)
     jaxpr = jax.make_jaxpr(f)(*args)
     print(jaxpr)
-    interpreter = vkji.JaxprInterpreter(jaxpr)
+    vkfunc = vkjax.Function(f)
 
-    y     = interpreter.run(*args, profile=False)
+    y     = vkfunc(*args)
     ytrue = f(*args)
 
     print(y)

@@ -1,7 +1,7 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES']=''
 
-import vkjax.kompute_jaxpr_interpreter as vkji
+import vkjax
 
 import jax, jax.numpy as jnp, numpy as np
 import elegy, optax
@@ -41,9 +41,9 @@ def test_basic_inference():
     mlp_model.predict(x) #for initialization
     jaxpr       = jax.make_jaxpr(mlp_model.predict_fn)(x)
     print(jaxpr)
-    interpreter = vkji.JaxprInterpreter(jaxpr)
+    vkfunc = vkjax.Function(mlp_model.predict_fn)
 
-    y     = interpreter.run(x)
+    y     = vkfunc(x)
     ytrue = mlp_model.predict(x)
 
     assert np.shape(y) == np.shape(ytrue)
@@ -55,9 +55,9 @@ def test_scce():
     scce  = lambda x,y: elegy.losses.sparse_categorical_crossentropy(y,x).mean()
     X     = np.random.random([8,10]), np.random.randint(0,10, size=8)
     jaxpr = jax.make_jaxpr(scce)(*X)
-    interpreter = vkji.JaxprInterpreter(jaxpr)
+    vkfunc = vkjax.Function(scce)
 
-    ypred = interpreter.run(*X)
+    ypred = vkfunc(*X)
     ytrue = scce(*X)
     assert np.allclose(ypred, ytrue)
 
@@ -66,9 +66,9 @@ def test_scce_value_and_grad():
     scce_vg = jax.value_and_grad(scce)
     X       = np.random.random([8,10]), np.random.randint(0,10, size=8)
     jaxpr   = jax.make_jaxpr(scce_vg)(*X)
-    interpreter = vkji.JaxprInterpreter(jaxpr)
+    vkfunc = vkjax.Function(scce_vg)
 
-    ypred = interpreter.run(*X)
+    ypred = vkfunc(*X)
     ytrue = scce_vg(*X)
 
     assert all(jax.tree_multimap(np.allclose, ytrue, ypred))
@@ -97,11 +97,12 @@ def test_basic_training():
     
     jaxpr, outshapes = jax.make_jaxpr(train_jit, static_argnums=(0,1), return_shape=True)(*state, x,y)
     _set_state_fn(state)
+    print(jaxpr)
 
-    interpreter = vkji.JaxprInterpreter(jaxpr, static_argnums=(0,1))
+    vkfunc = vkjax.Function(train_jit, static_argnums=(0,1))
 
     #state = _get_state_fn()
-    ypred     = interpreter.run(*state, x,y)
+    ypred     = vkfunc(*state, x,y)
     ypred     = jax.tree_unflatten(jax.tree_structure(outshapes), ypred)
     #_set_state_fn(state)
     
@@ -117,9 +118,9 @@ def test_basic_training():
     #deep inspection of inner variables
     state = _get_state_fn()
     _, envtrue = eval_jaxpr(jaxpr.jaxpr, jaxpr.literals, *jax.tree_leaves(state[2:]), x, y, return_env=True)
-    _, envpred = interpreter.run(*state, x,y, return_all=True)
+    _, envpred = vkfunc(*state, x,y, return_all=True)
     #atol higher than default
-    assert np.all([safe_allclose(envpred.get(k, None), vtrue, atol=1e-6)  for k,vtrue in envtrue.items()])
+    assert np.all([ [print(k, envpred.get(k, 65), vtrue), safe_allclose(envpred.get(k, None), vtrue, atol=1e-6)]  for k,vtrue in envtrue.items()])
 
 
 
@@ -176,6 +177,9 @@ def safe_allclose(x,y, *args, **kwargs):
         return True
     if np.any(np.isnan(y)):
         return True
+    #convert custom pytrees if there are any
+    x = jax.tree_leaves(x)
+    y = jax.tree_leaves(y)
     return np.allclose(x,y, *args, **kwargs)
 
 def safe_abs_max_error(x,y):

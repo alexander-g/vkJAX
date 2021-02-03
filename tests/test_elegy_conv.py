@@ -1,7 +1,7 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES']=''
 
-import vkjax.kompute_jaxpr_interpreter as vkji
+import vkjax
 
 import jax, jax.numpy as jnp, numpy as np
 import elegy, optax
@@ -31,9 +31,9 @@ def test_basic_inference0():
     model.predict(x) #for initialization
     jaxpr       = jax.make_jaxpr(model.predict_fn)(x)
     print(jaxpr)
-    interpreter = vkji.JaxprInterpreter(jaxpr)
+    vkfunc = vkjax.Function(model.predict_fn)
 
-    y     = interpreter.run(x)
+    y     = vkfunc(x)
     ytrue = model.predict(x)
 
     assert np.shape(y) == np.shape(ytrue)
@@ -65,10 +65,10 @@ def test_basic_training():
     print(jaxpr)
     _set_state_fn(state)
 
-    interpreter = vkji.JaxprInterpreter(jaxpr, static_argnums=(0,1))
+    vkfunc = vkjax.Function(train_jit, static_argnums=(0,1))
 
     #state = _get_state_fn()
-    ypred     = interpreter.run(*state, x,y)
+    ypred     = vkfunc(*state, x,y)
     ypred     = jax.tree_unflatten(jax.tree_structure(outshapes), ypred)
     #_set_state_fn(state)
     
@@ -85,7 +85,7 @@ def test_basic_training():
     #deep inspection of inner variables
     state = _get_state_fn()
     _, envtrue = eval_jaxpr(jaxpr.jaxpr, jaxpr.literals, *jax.tree_leaves(state[2:]), x, y, return_env=True)
-    _, envpred = interpreter.run(*state, x,y, return_all=True)
+    _, envpred = vkfunc(*state, x,y, return_all=True)
     #XXX:atol higher than default
     assert np.all([safe_allclose(envpred.get(k, None), vtrue, atol=1e-6)  for k,vtrue in envtrue.items()])
 
