@@ -77,8 +77,6 @@ class JaxprInterpreter:
         output_values  = [np.asarray(x, dtype=var.aval.dtype) for x,var in zip(output_values, self.jaxpr.jaxpr.outvars)]
         output_values  = tuple(output_values)
 
-        if len(output_values)==1:
-            output_values = output_values[0]
         
         if not return_all:
             return output_values

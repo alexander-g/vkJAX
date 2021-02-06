@@ -33,3 +33,7 @@ def _restore_shapes(x, targetshapes):
     x         = jax.tree_unflatten(structure, x)
     x         = jax.tree_multimap(lambda a,shapestruct: jnp.asarray(a).reshape(shapestruct.shape), x, targetshapes )
     return x
+
+
+def wrap(function:tp.Callable, static_argnums:tp.Tuple[int]=()):
+    return Function(function, static_argnums)

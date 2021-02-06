@@ -1,4 +1,4 @@
 pytest
 pytest-cov
 flake8
-git+https://github.com/alexander-g/elegy.git@unwrapped
+elegy==0.4.1

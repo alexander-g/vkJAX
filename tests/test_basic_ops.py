@@ -112,6 +112,9 @@ def add_any0(p, ct): return jax.vjp(lambda x:x+x, p)[1](ct)+(np.float32(1),)
 
 def transpose0(x): return x.T
 def rev0(x): return jax.lax.rev(x, dimensions=[1,2])
+def integer_pow0(x): return x**2
+def integer_pow1(x): return x**5
+def pow0(x,y):       return jax.lax.pow(x,y)
 
 
 
@@ -205,6 +208,10 @@ param_matrix = [
     (transpose0, 'random([N,N]).T',     [np.random.random([32,32])]),
     (transpose0, 'random([N,M]).T',     [np.random.random([32,65])]),
     (rev0,       'rev0 dims=1,2',       [np.random.random([33,77,88,11])]),
+
+    (integer_pow0, 'x**2',              [np.random.random([77,9,35])]),
+    (integer_pow1, 'x**5',              [np.random.random([77,9,35])]),
+    (pow0, 'x**scalar',                 [np.random.random([77,9,35]), np.random.random()]),
 ]
 
 

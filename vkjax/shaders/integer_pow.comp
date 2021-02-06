@@ -1,0 +1,16 @@
+#version 450
+
+layout (local_size_x = 32) in;
+
+
+layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };
+
+//constants injected in python
+const float Y = {{Y}};
+
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+    result[index] = pow(in_a[index], Y);
+}

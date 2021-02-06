@@ -57,6 +57,7 @@ lt  = element_wise_binary_op
 eq  = element_wise_binary_op
 #not sure but seeems to be the same
 add_any = add
+pow = element_wise_binary_op
 
 
 
@@ -426,4 +427,12 @@ def reduce_window_max(self, equation:jax.core.JaxprEqn):
     outbuf = self.get_or_create_buffer(equation.outvars[0])
 
     shader_bytes = shaders.get_shader('reduce_window_max_2d', **shader_consts)
+    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+
+
+def integer_pow(self, equation:jax.core.JaxprEqn):
+    inbuf  = self.get_or_create_buffer(equation.invars[0])
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
+
+    shader_bytes = shaders.get_shader('integer_pow', Y=equation.params['y'])
     return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
