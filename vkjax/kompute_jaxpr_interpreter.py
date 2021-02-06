@@ -77,8 +77,6 @@ class JaxprInterpreter:
         output_values  = [np.asarray(x, dtype=var.aval.dtype) for x,var in zip(output_values, self.jaxpr.jaxpr.outvars)]
         output_values  = tuple(output_values)
 
-        if len(output_values)==1:
-            output_values = output_values[0]
         
         if not return_all:
             return output_values
@@ -86,6 +84,7 @@ class JaxprInterpreter:
             all_tensors = [b.tensor for b in self.buffers.values() if b is not None]
             self.mgr.eval_tensor_sync_local_def(all_tensors)
             all_arrays = [(var, buf.numpy() if buf is not None else None) for var,buf in self.buffers.items()]
+            print( [[(var, buf.numpy() if buf is not None else '"None"') for var,buf in self.buffers.items() if str(var)=='c']] )
             return output_values, dict(all_arrays)
 
     def get_or_create_buffer(self, var:tp.Union[jax.core.Var, jax.core.Literal], initial_value:tp.Optional[np.ndarray] = None):

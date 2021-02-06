@@ -57,6 +57,7 @@ lt  = element_wise_binary_op
 eq  = element_wise_binary_op
 #not sure but seeems to be the same
 add_any = add
+pow = element_wise_binary_op
 
 
 
@@ -81,6 +82,7 @@ exp = element_wise_unary_op
 log = element_wise_unary_op
 neg = element_wise_unary_op
 abs = element_wise_unary_op
+rsqrt = element_wise_unary_op
 
 
 
@@ -402,4 +404,35 @@ def rev(self, equation:jax.core.JaxprEqn):
     shader_consts['REVERSED_DIMS'] = tuple(reversed_dims)
 
     shader_bytes = shaders.get_shader('rev', **shader_consts)
+    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+
+
+def reduce_window_max(self, equation:jax.core.JaxprEqn):
+    #only 2D implemented
+    assert len(equation.outvars[0].aval.shape) == 4, NotImplemented
+    params = equation.params
+    assert params['base_dilation']   == (1,1,1,1), NotImplemented
+    assert params['window_dilation'] == (1,1,1,1), NotImplemented
+
+    shader_consts = dict()
+    shader_consts['N']           = 4;   #number of dimensions
+    shader_consts['SHAPE_A']     = equation.invars[0].aval.shape
+    shader_consts['SHAPE_OUT']   = equation.outvars[0].aval.shape
+    shader_consts['PADDING']     = tuple(p[0] for p in params['padding'])
+    shader_consts['STRIDES']     = params["window_strides"]
+    shader_consts['WINDOW']      = params["window_dimensions"]
+
+
+    inbuf  = self.get_or_create_buffer(equation.invars[0])
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
+
+    shader_bytes = shaders.get_shader('reduce_window_max_2d', **shader_consts)
+    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+
+
+def integer_pow(self, equation:jax.core.JaxprEqn):
+    inbuf  = self.get_or_create_buffer(equation.invars[0])
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
+
+    shader_bytes = shaders.get_shader('integer_pow', Y=equation.params['y'])
     return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]

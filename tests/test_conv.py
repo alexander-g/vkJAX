@@ -1,7 +1,7 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES']=''
 
-import vkjax.kompute_jaxpr_interpreter as vkji
+import vkjax
 
 import jax, jax.numpy as jnp, numpy as np
 import pytest
@@ -88,15 +88,15 @@ param_matrix = [
 
 
 @pytest.mark.parametrize("f,desc,args", param_matrix)
-def test_convmatrix_kompute_interpreter(f, desc, args):
+def test_convmatrix(f, desc, args):
     print(f'==========TEST START: {desc}==========')
     print(f'**********RANDOM SEED: {seed}*********')
     args = jax.tree_map(jnp.asarray, args)
     jaxpr = jax.make_jaxpr(f)(*args)
     print(jaxpr)
-    interpreter = vkji.JaxprInterpreter(jaxpr)
+    vkfunc = vkjax.Function(f)
 
-    y     = interpreter.run(*args, profile=False)
+    y     = vkfunc(*args)
     ytrue = f(*args)
 
     #print(args[0].reshape(3,3).round(5))

@@ -1,6 +1,4 @@
 jax
 jaxlib
-#kp
-git+https://github.com/alexander-g/vulkan-kompute.git
-
+kp==0.6
 pyshaderc
