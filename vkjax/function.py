@@ -31,7 +31,7 @@ class Function:
 def _restore_shapes(x, targetshapes):
     structure = jax.tree_structure(targetshapes)
     x         = jax.tree_unflatten(structure, x)
-    x         = jax.tree_multimap(lambda a,shapestruct: jnp.asarray(a).reshape(shapestruct.shape), x, targetshapes )
+    x         = jax.tree_multimap(lambda a,shapestruct: np.asarray(a).reshape(shapestruct.shape), x, targetshapes )
     return x
 
 
