@@ -359,6 +359,7 @@ def noop(self, equation:jax.core.JaxprEqn):
 convert_element_type = noop
 #not relevant for us i think
 stop_gradient        = noop
+squeeze              = noop
 
 
 
@@ -436,3 +437,21 @@ def integer_pow(self, equation:jax.core.JaxprEqn):
 
     shader_bytes = shaders.get_shader('integer_pow', Y=equation.params['y'])
     return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+
+
+def slice(self, equation:jax.core.JaxprEqn):
+    inbuf  = self.get_or_create_buffer(equation.invars[0])
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
+
+    shader_consts = dict()
+    N                          = len(inbuf.shape)
+    strides                    = equation.params['strides'] or (1,)*N
+    shader_consts['N']         = N
+    shader_consts['START']     = str(equation.params['start_indices']).replace(',)',')')
+    shader_consts['STRIDES']   = str(strides).replace(',)',')')
+    shader_consts['SHAPE_A']   = str(inbuf.shape).replace(',)',')')
+    shader_consts['SHAPE_OUT'] = str(outbuf.shape).replace(',)',')')
+
+    shader_bytes = shaders.get_shader('slice', **shader_consts)
+    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+

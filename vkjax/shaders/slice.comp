@@ -1,0 +1,36 @@
+#version 450
+
+layout (local_size_x = 32) in;
+
+layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };
+
+
+//constants are injected in python
+
+//number of dimensions
+const uint N            = {{N}};
+//start indices
+const int START[N]      = int[] {{START}} ;
+//strides
+const uint  STRIDES[N]  = uint[] {{STRIDES}} ;
+//shape of result
+const uint SHAPE_OUT[N] = uint[] {{SHAPE_OUT}};
+//shape of input
+const uint SHAPE_A[N]   = uint[] {{SHAPE_A}};
+
+
+
+//file include: common.glsl
+{{COMMON_GLSL}}
+
+
+void main() {
+    const uint index        = gl_GlobalInvocationID.x;
+    const int[N] coords_out = unravel_index(index, SHAPE_OUT);
+          int[N] coords_a   = multiply_coords(coords_out, STRIDES);
+                 coords_a   = add_coords(coords_a, START);
+    const uint   index_a    = ravel_coords(coords_a, SHAPE_A);
+
+    result[index] = in_a[index_a];
+}

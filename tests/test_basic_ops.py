@@ -116,6 +116,11 @@ def integer_pow0(x): return x**2
 def integer_pow1(x): return x**5
 def pow0(x,y):       return jax.lax.pow(x,y)
 
+def slice0(x):       return jax.lax.slice(x, [2], [33])
+def slice1(x):       return jax.lax.slice(x, [55,5], [101,10])
+def slice2(x):       return jax.lax.slice(x, [55,5], [101,10], [2,3])
+def squeeze0(x):     return jnp.squeeze(x)
+
 
 
 param_matrix = [
@@ -212,6 +217,11 @@ param_matrix = [
     (integer_pow0, 'x**2',              [np.random.random([77,9,35])]),
     (integer_pow1, 'x**5',              [np.random.random([77,9,35])]),
     (pow0, 'x**scalar',                 [np.random.random([77,9,35]), np.random.random()]),
+
+    (slice0, '1-D slice(x, [2],[5])',   [np.random.random([99])]),
+    (slice1, '2-D slice no strides',    [np.random.random([199,99])]),
+    (slice2, '2-D slice + strides',     [np.random.random([199,99])]),
+    (squeeze0, '5-D squeeze',           [np.random.random([199,99,1,1,5])]),
 ]
 
 
