@@ -59,6 +59,7 @@ def test_scce():
     scce  = lambda x,y: elegy.losses.sparse_categorical_crossentropy(y,x).mean()
     X     = np.random.random([8,10]), np.random.randint(0,10, size=8)
     jaxpr = jax.make_jaxpr(scce)(*X)
+    print(jaxpr)
     vkfunc = vkjax.Function(scce)
 
     ypred = vkfunc(*X)
@@ -117,7 +118,6 @@ def test_basic_training():
     jaxpr       = interpreter.jaxpr
     _, envtrue  = eval_jaxpr(jaxpr.jaxpr, jaxpr.literals, x, y, None,None, model.states, return_env=True)
     _, envpred  = interpreter.run(x, y, 'train', None,None, model.states, False, return_all=True)
-    #_, envpred = interpreter.run(x, y,  None,None, model.states, return_all=True)
     #XXX:atol higher than default
     assert np.all([safe_allclose(envpred.get(k, None), vtrue, atol=1e-6)  for k,vtrue in envtrue.items()])
 

@@ -4,7 +4,7 @@ layout (local_size_x = 32) in;
 
 layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
 layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };
-layout(set = 0, binding = 2) readonly  buffer binb { float in_b[]; };
+layout(set = 0, binding = 2) readonly  buffer binb { uint in_b[]; };
 
 void main() {
     //constants injected in python
@@ -13,8 +13,8 @@ void main() {
     const uint M = {{M}};
     const uint index = gl_GlobalInvocationID.x;
 
-    const uint i0 = uint(in_b[index*2]);
-    const uint i1 = uint(in_b[index*2+1]);
+    const uint i0 = in_b[index*2];
+    const uint i1 = in_b[index*2+1];
     
     const uint index_a = min(i0*M + i1, N*M-1);
 

@@ -121,6 +121,12 @@ def slice1(x):       return jax.lax.slice(x, [55,5], [101,10])
 def slice2(x):       return jax.lax.slice(x, [55,5], [101,10], [2,3])
 def squeeze0(x):     return jnp.squeeze(x)
 
+def threefry0a():    return jax.random.threefry2x32_p.bind(*np.ones(4, 'uint32'))
+def threefry0b():    return jax.random.threefry2x32_p.bind(*np.ones([4,10], 'uint32'))
+def threefry1(x):    return jax.random.threefry2x32_p.bind(*x)
+
+def convert_element_type0(x): return x.astype(np.int32)
+def convert_element_type1(x): return x.astype(np.float32)
 
 
 param_matrix = [
@@ -137,6 +143,8 @@ param_matrix = [
     (add2, 'add x+y scalar-array3d',    [5.0, np.random.random((32,32,32))]),
     (add2, 'add x+y array3d-array3d',   [np.random.random((32,32,32)), np.random.random((32,32,32))]),
     (add2, 'broadcast_add [2,32]+[32]', [np.random.random((2,32)), np.random.random((32))]),
+
+    (add2, 'add x+y int',               [np.random.randint(65,size=(32,32,32)), np.random.randint(77, size=(32,32,32))]),
 
     (add3, 'add nested (x+x)+(y+x)',    [5.0, 7.1]),
     (add3, 'add nested (x+x)+(y+x)',    [5.0, 7.1]),
@@ -178,7 +186,10 @@ param_matrix = [
 
     (gt0, 'gt0',                        [np.random.random([32,32]), np.random.random([32,32])]),
     (ge0, 'ge0',                        [np.random.random([32,32]), np.random.random([32,32])]),
+    (ge0, 'ge0 float>=bool',            [np.random.random([32,32])+0.5, np.random.random([32,32])>0.5]),
+    (ge0, 'ge0 bool>=float',            [np.random.random([32,32])>0.5, np.random.random([32,32])+0.5]),
     (lt0, 'lt0',                        [np.random.random([32,32]), np.random.random([32,32])]),
+    (lt0, 'lt0 int[]<scalar',           [np.random.randint(999,size=[999]), 555]),
     (eq0, 'eq0',                        [np.random.randint(0,3, size=[32,32]).astype(np.float32), 
                                          np.random.randint(0,3, size=[32,32]).astype(np.float32) ]),
     (eq1, 'eq1 x==x.max(-1)',           [np.random.random([32,32])]),
@@ -222,6 +233,17 @@ param_matrix = [
     (slice1, '2-D slice no strides',    [np.random.random([199,99])]),
     (slice2, '2-D slice + strides',     [np.random.random([199,99])]),
     (squeeze0, '5-D squeeze',           [np.random.random([199,99,1,1,5])]),
+
+    (threefry0a,'all const size=1',     [] ),
+    (threefry0b,'all const size=n',     [] ),
+    (threefry1, 'all zero size=1',      [np.zeros(4).astype('uint32')] ),
+    (threefry1, 'all ones size=1',      [np.ones(4).astype('uint32')] ),
+    (threefry1, 'all random size=1',    [np.random.randint(0,10000000, size=4).astype('uint32')] ),
+    (threefry1, 'all random size=65',   [np.random.randint(0,10000000, size=(4,65)).astype('uint32')] ),
+
+    (convert_element_type0, 'float2int',[np.random.random([77,101])*65]),
+    (convert_element_type1, 'int2float',[np.random.randint(77,101, size=(99,99))]),
+    (convert_element_type1,'bool2float',[np.random.random([77,101])>0.5]),
 ]
 
 

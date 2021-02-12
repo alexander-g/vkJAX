@@ -13,16 +13,52 @@ class Buffer(tp.NamedTuple):
 
     def numpy(self):
         array = self.tensor.numpy()
+        #array = array.view(self.dtype)
+        array  = view_or_convert_from_32bit(array, self.dtype)
         #the tensor might be larger than the shape it represents
         n     = int(np.prod(self.shape))
         array = array[:n].reshape(self.shape)
         return array
 
 
+def view_or_convert_from_32bit(x, dtype):
+    if dtype == np.bool:
+        #GLSL booleans are 32-bit, cannot simply .view()
+        return x>0
+    else:
+        return x.view(dtype)
+
+
+
+NP2GLSL_DTYPES_MAP = {
+    np.bool_:   'bool',
+    np.int32:   'int',
+    np.uint32:  'uint',
+    np.float32: 'float',
+}
+
+def np_to_glsl_dtypes(np_dtypes):
+    glsl_dtypes = []
+    for i,dt in enumerate(np_dtypes):
+        if dt not in NP2GLSL_DTYPES_MAP:
+            raise NotImplementedError(f'{dt} data types currently not supported')
+        glsl_dtypes += [(f'DTYPE{i}', NP2GLSL_DTYPES_MAP[dt])]
+    return dict(glsl_dtypes)
+
+
 class Op(tp.NamedTuple):
     tensors:  tp.List[kp.Tensor]
     shader:   bytes
-    equation : jax.core.JaxprEqn
+    equation: jax.core.JaxprEqn
+    workgroup:tp.Tuple[int] = None
+
+    @classmethod
+    def construct(cls, buffers:tp.List[Buffer], shader_name:str, equation:jax.core.JaxprEqn, **consts):
+        dtype_consts = np_to_glsl_dtypes([b.dtype.type for b in buffers])
+        shader_bytes = shaders.get_shader(shader_name, **consts, **dtype_consts)
+        tensors      = [b.tensor for b in buffers]
+        workgroup    = None
+        return Op(tensors, shader_bytes, equation, workgroup)
 
 
 
@@ -33,18 +69,17 @@ def element_wise_binary_op(self, equation:jax.core.JaxprEqn):
     
     outvar      = equation.outvars[0]
 
-    intensors   = []
+    inbufs      = []
     bcast_ops   = []
     for invar in equation.invars:
         buf = self.get_or_create_buffer(invar)
         if invar.aval.shape != outvar.aval.shape:
-            buf,bcast_op = broadcast(self, buf, outvar)
+            buf,bcast_op = broadcast(self, buf, outvar, invar.aval.dtype)
             bcast_ops.append(bcast_op)
-        intensors.append(buf.tensor)
+        inbufs.append(buf)
     
     outbuf = self.get_or_create_buffer(outvar)
-    shader_bytes = shaders.get_shader(equation.primitive.name)
-    return bcast_ops+[Op(intensors+[outbuf.tensor], shader_bytes, equation)]
+    return bcast_ops+[Op.construct(inbufs+[outbuf], equation.primitive.name, equation)]
 
 add = element_wise_binary_op
 sub = element_wise_binary_op
@@ -87,7 +122,11 @@ rsqrt = element_wise_unary_op
 
 
 
-def broadcast(self, buf:Buffer, newvar:jax.core.Var):
+def broadcast(self, buf:Buffer, newvar:jax.core.Var, dtype:np.dtype):
+    #newvar has the correct shape to broadcast to, but maybe a wrong dtype
+    aval   = jax.core.ShapedArray(newvar.aval.shape, dtype)
+    newvar = jax.core.Var(newvar.count, suffix='_broadcast', aval=aval)
+
     shape_in  = np.ones(len(newvar.aval.shape), dtype=int)
     for i,(olddim,newdim) in enumerate(zip(buf.shape[::-1], newvar.aval.shape[::-1])):
         if olddim!=newdim and olddim!=1:
@@ -211,9 +250,7 @@ def dot_general(self, equation:jax.core.JaxprEqn):
 def iota(self, equation:jax.core.JaxprEqn):
     assert equation.params['dimension'] == 0
     outbuf = self.get_or_create_buffer(equation.outvars[0])
-    shader_bytes = shaders.get_shader(equation.primitive)
-    #self.sequence.record_algo_data([outbuf.tensor], shader_bytes)
-    return [Op([outbuf.tensor], shader_bytes, equation)]
+    return [Op.construct([outbuf], 'iota', equation)]
 
 def reduce_op(self, equation:jax.core.JaxprEqn):
     axes  = equation.params['axes']
@@ -255,8 +292,7 @@ def select(self, equation:jax.core.JaxprEqn):
     inbufs = [self.get_or_create_buffer(var) for var in equation.invars]
     outbuf = self.get_or_create_buffer(equation.outvars[0])
 
-    shader_bytes = shaders.get_shader(equation.primitive.name)
-    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
+    return [Op.construct([outbuf]+inbufs, 'select', equation)]
 
 def concatenate(self, equation:jax.core.JaxprEqn):
     #currently only support for concatenation of 2 parameters
@@ -272,13 +308,13 @@ def concatenate(self, equation:jax.core.JaxprEqn):
     inbufs = [self.get_or_create_buffer(var) for var in equation.invars]
     outbuf = self.get_or_create_buffer(equation.outvars[0])
 
-    cols_a   = inbufs[0].shape[-1]
-    cols_b   = inbufs[1].shape[-1]
-    cols_out = outbuf.shape[-1]
-    size_out = np.prod(outbuf.shape)
+    shader_consts = dict()
+    shader_consts['COLS_A']   = inbufs[0].shape[-1]
+    shader_consts['COLS_B']   = inbufs[1].shape[-1]
+    shader_consts['COLS_OUT'] = outbuf.shape[-1]
+    shader_consts['SIZE_OUT'] = np.prod(outbuf.shape)
 
-    shader_bytes = shaders.get_shader(equation.primitive.name, COLS_A=cols_a, COLS_B=cols_b, COLS_OUT=cols_out, SIZE_OUT=size_out)
-    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
+    return [Op.construct([outbuf]+inbufs, 'concatenate', equation, **shader_consts)]
 
 
 def gather(self, equation:jax.core.JaxprEqn):
@@ -355,8 +391,6 @@ def noop(self, equation:jax.core.JaxprEqn):
     self.buffers[equation.outvars[0]] = inbuf
     return []
 
-#currently using float32 for everything
-convert_element_type = noop
 #not relevant for us i think
 stop_gradient        = noop
 squeeze              = noop
@@ -455,3 +489,16 @@ def slice(self, equation:jax.core.JaxprEqn):
     shader_bytes = shaders.get_shader('slice', **shader_consts)
     return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
 
+
+def threefry2x32(self, equation:jax.core.JaxprEqn):
+    inbufs  = [self.get_or_create_buffer(v) for v in equation.invars]
+    outbufs = [self.get_or_create_buffer(v) for v in equation.outvars]
+
+    shader_bytes = shaders.get_shader('threefry2x32')
+    return [Op([b.tensor for b in inbufs+outbufs], shader_bytes, equation)]
+
+
+def convert_element_type(self, equation:jax.core.JaxprEqn):
+    inbuf  = self.get_or_create_buffer(equation.invars[0])
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
+    return [Op.construct([outbuf,inbuf], 'convert_element_type', equation)]

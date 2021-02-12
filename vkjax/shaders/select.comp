@@ -2,12 +2,12 @@
 
 layout (local_size_x = 32) in;
 
-layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
-layout(set = 0, binding = 1) readonly  buffer bina { float pred[]; };
-layout(set = 0, binding = 2) readonly  buffer binb { float v0[]; };
-layout(set = 0, binding = 3) readonly  buffer binc { float v1[]; };
+layout(set = 0, binding = 0) writeonly buffer bout { {{DTYPE0}} result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { bool       pred[]; };
+layout(set = 0, binding = 2) readonly  buffer binb { {{DTYPE2}} v0[]; };
+layout(set = 0, binding = 3) readonly  buffer binc { {{DTYPE3}} v1[]; };
 
 void main() {
     const uint index = gl_GlobalInvocationID.x;
-    result[index] = pred[index]*v0[index] + (1-pred[index])*v1[index];
+    result[index] = {{DTYPE2}}(pred[index])*v0[index] + (1-{{DTYPE3}}(pred[index]))*v1[index];
 }

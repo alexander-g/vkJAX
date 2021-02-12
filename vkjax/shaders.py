@@ -15,7 +15,11 @@ def get_shader(name:str, **constants):
     shader_str = preformat(shader_str).format(COMMON_GLSL=COMMON_GLSL, **constants) 
 
     glsl_bytes = bytes(shader_str, encoding='utf8')
-    spirv      = pyshaderc.compile_into_spirv(glsl_bytes, 'comp', filepath='', optimization='size')
+    try:
+        spirv      = pyshaderc.compile_into_spirv(glsl_bytes, 'comp', filepath='', optimization='size')
+    except:
+        print_with_line_numbers(shader_str)
+        raise
     return spirv
 
 
@@ -30,3 +34,9 @@ def preformat(msg):
     msg = msg.replace('{', '{{').replace('}', '}}')
     msg = msg.replace('<<<', '{').replace('>>>', '}')
     return msg
+
+
+def print_with_line_numbers(x):
+    lines = x.split('\n')
+    lines = [f'{i:4d}|{line}' for i,line in enumerate(lines)]
+    print('\n'.join(lines))

@@ -2,9 +2,9 @@
 
 layout (local_size_x = 32) in;
 
-layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
-layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };
-layout(set = 0, binding = 2) readonly  buffer binb { float in_b[]; };
+layout(set = 0, binding = 0) writeonly buffer bout { {{DTYPE0}} result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { {{DTYPE1}} in_a[]; };
+layout(set = 0, binding = 2) readonly  buffer binb { {{DTYPE2}} in_b[]; };
 
 void main() {
     //constants injected in python
@@ -20,5 +20,6 @@ void main() {
     const uint a_or_b  = uint( col >= COLS_A );
     const uint index_a = row*COLS_A + col;
     const uint index_b = row*COLS_B + (col-COLS_A);
-    result[index]      = ((1-a_or_b) * in_a[index_a * (1-a_or_b)])   +   (a_or_b * in_b[index_b * a_or_b]);
+    result[index]      = ((1-{{DTYPE1}}(a_or_b)) * in_a[index_a * (1-a_or_b)])   
+                       + (   {{DTYPE2}}(a_or_b)  * in_b[index_b *    a_or_b ]);
 }
