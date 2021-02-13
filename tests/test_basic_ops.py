@@ -68,6 +68,8 @@ def iota0():  return jnp.arange(32)
 def select0(x,y,z):    return jnp.where(x,y,z)
 def concatenate0(x,y): return jnp.concatenate([x,y], axis=-1)
 
+def gather0(x): return x[5,:,4:7,:]
+
 #equivalent to x[i[0], i[2]] with x.shape=(B,N), i.shape=(B,1,2)
 gather_fn0 = lambda x,i: jax.lax.gather(x,
                                         i, 
@@ -205,6 +207,7 @@ param_matrix = [
     (select0, 'select0',                [np.random.random([32,32])>0.5, np.ones([32,32]), np.zeros([32,32])]),
     (concatenate0, 'concatenate0',      [np.random.random([32,32,32]), np.random.random([32,32,16])]),
 
+    (gather0, 'gather0',                [np.random.random([100,100,100,100])]),
     (gather_fn0, 'gather_fn0',          [np.random.random([32,10]), 
                                          np.c_[np.random.randint(0,32, size=[32]), 
                                                np.random.randint(0,10, size=[32])].reshape(32,1,2) ]),
@@ -213,8 +216,8 @@ param_matrix = [
                                                np.random.randint(0,10, size=[32])].reshape(32,1,2),
                                          np.random.random([32]).reshape(32,1) ]),
     (take_along_axis0, 'take_along0',   [np.random.random([32,10]), np.random.randint(0,10, size=32)[:,np.newaxis] ]),
-    #(take_along_axis0_g, 'take0_grad',  [np.random.random([32,10]), np.random.randint(0,10, size=32)[:,np.newaxis] ]),
-    (take_along_axis0_g, 'take0_grad',  [np.random.random([3,4]), np.random.randint(0,4, size=3)[:,np.newaxis] ]),
+    (take_along_axis0_g, 'take0_grad',  [np.random.random([32,10]), np.random.randint(0,10, size=32)[:,np.newaxis] ]),
+    #(take_along_axis0_g, 'take0_grad',  [np.random.random([3,4]), np.random.randint(0,4, size=3)[:,np.newaxis] ]),
 
     (gather_fn1, 'gather_fn1',          [np.random.random([32,10]), np.random.randint(0,10, size=[1]) ]),
     (scatter_add_fn1, 'scatter_add1',   [np.random.random([32,10]), np.random.randint(0,10, size=[1]), np.random.random(32)]),

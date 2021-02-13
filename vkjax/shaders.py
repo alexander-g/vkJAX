@@ -38,5 +38,5 @@ def preformat(msg):
 
 def print_with_line_numbers(x):
     lines = x.split('\n')
-    lines = [f'{i:4d}|{line}' for i,line in enumerate(lines)]
+    lines = [f'{i+1:4d}|{line}' for i,line in enumerate(lines)]
     print('\n'.join(lines))

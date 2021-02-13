@@ -318,36 +318,39 @@ def concatenate(self, equation:jax.core.JaxprEqn):
 
 
 def gather(self, equation:jax.core.JaxprEqn):
-    d0 = jax.lax.GatherDimensionNumbers(offset_dims=(), collapsed_slice_dims=(0, 1), start_index_map=(0, 1))
-    d1 = jax.lax.GatherDimensionNumbers(offset_dims=(0,), collapsed_slice_dims=(1,), start_index_map=(1,))
-    if equation.params['dimension_numbers'] == d0 and equation.params['slice_sizes'] == (1,1):
-        #equivalent to x[i[0], i[2]] with x.shape=(B,N), i.shape=(B,1,2)
-        inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
-        outbuf = self.get_or_create_buffer(equation.outvars[0])
+    params = equation.params
+    inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
 
-        assert len(inbufs[0].shape)==2
-        assert inbufs[1].shape[1:] == (1,2)
+    print('INBUFS:',[b.shape for b in inbufs])
+    print('OUTBUF:',outbuf.shape)
+    shader_consts = dict()
+    shader_consts['N_A']             = len(inbufs[0].shape)
+    shader_consts['N_B']             = len(inbufs[1].shape)
+    shader_consts['N_OUT']           = len(outbuf.shape)
 
-        shader_bytes = shaders.get_shader('gather0', N=inbufs[0].shape[0], M=inbufs[0].shape[1])
-        #self.sequence.record_algo_data([b.tensor for b in [outbuf]+inbufs], shader_bytes)
-        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
-    elif equation.params['dimension_numbers'] == d1 and equation.params['slice_sizes'][1] == 1:
-        #equivalent to x[:,i] with x.shape=(B,N), i.shape=(1,), i range 0...N
-        inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
-        outbuf = self.get_or_create_buffer(equation.outvars[0])
+    shader_consts['SHAPE_A']         = str(inbufs[0].shape).replace(',)', ')')
+    shader_consts['SHAPE_B']         = str(inbufs[1].shape).replace(',)', ')')
+    shader_consts['SHAPE_OUT']       = str(outbuf.shape).replace(',)', ')')
 
-        assert len(inbufs[0].shape)==2
-        assert inbufs[1].shape==(1,)
+    shader_consts['START_INDEX_MAP'] = str(params['dimension_numbers'].start_index_map).replace(',)', ')')
+    shader_consts['SLICE_SIZES']     = str(params['slice_sizes']).replace(',)', ')')
 
-        shader_bytes = shaders.get_shader('gather1', N=inbufs[0].shape[0], M=inbufs[0].shape[1])
-        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
-    else:
-        raise NotImplementedError(equation)
+    offset_dims  = tuple(params['dimension_numbers'].offset_dims) + (-1,)
+    noffset_dims = tuple([i for i in range(len(inbufs[1].shape)-1) if i not in offset_dims]) + (-1,)
+    shader_consts['OFFSET_DIMS']     = str( offset_dims).replace(',)', ')')
+    shader_consts['NOFFSET_DIMS']    = str(noffset_dims).replace(',)', ')')
+    shader_consts['N_OFF']           = len( offset_dims)
+    shader_consts['N_NOFF']          = len(noffset_dims)
+
+    return [Op.construct([outbuf]+inbufs, 'gather', equation, **shader_consts)]
+
 
 def scatter_add(self, equation:jax.core.JaxprEqn):
+    params = equation.params
     d0 = jax.lax.ScatterDimensionNumbers(update_window_dims=(), inserted_window_dims=(0,1), scatter_dims_to_operand_dims=(0,1))
     d1 = jax.lax.ScatterDimensionNumbers(update_window_dims=(0,), inserted_window_dims=(1,), scatter_dims_to_operand_dims=(1,))
-    if equation.params['dimension_numbers'] == d0:
+    if params['dimension_numbers'] == d0:
         #equivalent to x[i[0], i[2]] += u[i[0]],  with x.shape=(B,N), i.shape=(B,1,2), u.shape=(B,)
         inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
         outbuf = self.get_or_create_buffer(equation.outvars[0])
@@ -359,7 +362,7 @@ def scatter_add(self, equation:jax.core.JaxprEqn):
 
         shader_bytes = shaders.get_shader('scatter0', N=inbufs[0].shape[0], M=inbufs[0].shape[1])
         return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
-    elif equation.params['dimension_numbers'] == d1:
+    elif params['dimension_numbers'] == d1:
         #equivalent to x[:,i]+=u with x.shape=(B,N), i.shape=(1,), u.shape=(B,)
         inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
         outbuf = self.get_or_create_buffer(equation.outvars[0])
