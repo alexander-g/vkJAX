@@ -151,6 +151,8 @@ def view_as_float32(x):
     if x.dtype==np.bool:
         #glsl booleans are 32-bit
         x = x.astype('uint32')
-    if x.dtype.type in {np.float64, np.int64}:
+    if x.dtype.type in {np.float64}:
         x = x.astype('float32')
+    if x.dtype.type in {np.int64}:
+        x = x.astype('int32')
     return x.view('float32')

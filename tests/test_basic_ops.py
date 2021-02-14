@@ -19,6 +19,7 @@ def add1(x): return x+1.0
 def add2(x,y): return x+y
 def add3(x,y): return jax.jit(add0)(x) + jax.jit(add2)(y,x)
 def add4(x,y): return jax.jit(add0)(x) + jax.jit(add2)(y, 1.0)
+def add00():   return jax.lax.add(5,100)
 
 def div0(x,y): return x/y
 def sub0(x,y): return x-y
@@ -68,7 +69,9 @@ def iota0():  return jnp.arange(32)
 def select0(x,y,z):    return jnp.where(x,y,z)
 def concatenate0(x,y): return jnp.concatenate([x,y], axis=-1)
 
-def gather0(x): return x[5,:,4:7,:]
+def gather0(x): return x[:,:,4:7,:]
+def gather1a(x): return x[5,:]
+def gather1b(x): return x[:,5]
 
 #equivalent to x[i[0], i[2]] with x.shape=(B,N), i.shape=(B,1,2)
 gather_fn0 = lambda x,i: jax.lax.gather(x,
@@ -137,6 +140,7 @@ param_matrix = [
     (add0, 'add x+x scalar',            [5.0], ),
     (add0, 'add x+x array1d',           [np.random.random(32)] ),
     (add0, 'add x+x array3d',           [np.random.random((32,32,32))] ),
+    (add00,'5+100',                     []),
 
     (add1, 'add x+1 scalar',            [5.0] ),
     (add1, 'add x+1 array3d',           [np.random.random((32,32,32))] ),
@@ -208,6 +212,8 @@ param_matrix = [
     (concatenate0, 'concatenate0',      [np.random.random([32,32,32]), np.random.random([32,32,16])]),
 
     (gather0, 'gather0',                [np.random.random([100,100,100,100])]),
+    (gather1a, 'gather1a x[5,:]',       [np.random.random([8,8])]),
+    (gather1b, 'gather1b x[:,5]',       [np.random.random([8,8])]),
     (gather_fn0, 'gather_fn0',          [np.random.random([32,10]), 
                                          np.c_[np.random.randint(0,32, size=[32]), 
                                                np.random.randint(0,10, size=[32])].reshape(32,1,2) ]),
@@ -265,6 +271,7 @@ def test_matrix_kompute_interpreter(f, desc, args):
     print(y)
     print()
     print(ytrue)
+
 
     assert jax.tree_structure(y) == jax.tree_structure(ytrue)
     assert np.all(jax.tree_leaves(jax.tree_multimap(lambda x,y: np.shape(x)==np.shape(y), y,ytrue)))

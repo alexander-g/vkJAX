@@ -61,6 +61,18 @@ class Op(tp.NamedTuple):
         return Op(tensors, shader_bytes, equation, workgroup)
 
 
+def to_shape_const_str(shape:tp.Iterable):
+    '''Converts a shape to a string for use in GLSL shaders'''
+    return str(tuple(shape)).replace(',)',')')
+
+
+
+
+
+###############################################################
+
+
+
 
 def element_wise_binary_op(self, equation:jax.core.JaxprEqn):
     assert equation.params=={}
@@ -135,11 +147,18 @@ def broadcast(self, buf:Buffer, newvar:jax.core.Var, dtype:np.dtype):
     
     #FIXME: this should not be a shader call
     outbuf = self.get_or_create_buffer(newvar)
-    shape_in  = ','.join(map(str, shape_in))
-    shape_out = ','.join(map(str, outbuf.shape))
-    n         = len(outbuf.shape)
-    shader_bytes = shaders.get_shader('broadcast_in_dim', N=n, SHAPE_IN=shape_in, SHAPE_OUT=shape_out)
-    return outbuf, Op([outbuf.tensor, buf.tensor], shader_bytes, 'broadcast')
+    inbuf  = buf
+
+    shader_consts = dict()
+    inshape  = (1,)+inbuf.shape
+    outshape = (1,)+outbuf.shape
+    shader_consts['N_A']       = len(inshape)
+    shader_consts['N_OUT']     = len(outshape)
+    shader_consts['SHAPE_A']   = to_shape_const_str(inshape)
+    shader_consts['SHAPE_OUT'] = to_shape_const_str(outshape)
+    shader_consts['BCAST_DIM'] = to_shape_const_str( np.arange(len(inshape)) )
+
+    return outbuf, Op.construct([outbuf, inbuf], 'broadcast_in_dim', 'broadcast', **shader_consts)
 
 
 def broadcast_in_dim(self, equation:jax.core.JaxprEqn):
@@ -147,7 +166,6 @@ def broadcast_in_dim(self, equation:jax.core.JaxprEqn):
     assert np.all(np.diff(equation.params['broadcast_dimensions'])>0)
     invar  = equation.invars[0]
     outvar = equation.outvars[0]
-    assert len(invar.aval.shape) in [1,0]
 
     inbuf    = self.get_or_create_buffer(invar)
     if np.prod(inbuf.shape) == np.prod(outvar.aval.shape):
@@ -158,15 +176,21 @@ def broadcast_in_dim(self, equation:jax.core.JaxprEqn):
     else:
         #size changed, need a shader call (currently)
         #FIXME: shouldn't be a shader call
+        #FIXME: code duplication with broadcast()
+
         outbuf    = self.get_or_create_buffer(outvar)
-        shape_in  = np.ones(len(outbuf.shape), dtype=int)
-        for i,bcastdim in enumerate(equation.params['broadcast_dimensions']):
-            shape_in[bcastdim] = inbuf.shape[i]
-        shape_in  = ','.join(map(str, shape_in))
-        shape_out = ','.join(map(str, outbuf.shape))
-        n         = len(outbuf.shape)
-        shader_bytes = shaders.get_shader('broadcast_in_dim', N=n, SHAPE_IN=shape_in, SHAPE_OUT=shape_out)
-        return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+
+        shader_consts = dict()
+        inshape  = (1,)+inbuf.shape
+        outshape = (1,)+outbuf.shape
+        shader_consts['N_A']       = len(inshape)
+        shader_consts['N_OUT']     = len(outshape)
+        shader_consts['SHAPE_A']   = to_shape_const_str(inshape)
+        shader_consts['SHAPE_OUT'] = to_shape_const_str(outshape)
+        shader_consts['BCAST_DIM'] = to_shape_const_str( [0]+ [i+1 for i in equation.params['broadcast_dimensions']] )
+
+        return [Op.construct([outbuf, inbuf], 'broadcast_in_dim', equation, **shader_consts)]
+
 
 def xla_call(self, equation:jax.core.JaxprEqn):
     assert equation.params['device'] == None
@@ -322,26 +346,29 @@ def gather(self, equation:jax.core.JaxprEqn):
     inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
     outbuf = self.get_or_create_buffer(equation.outvars[0])
 
-    print('INBUFS:',[b.shape for b in inbufs])
-    print('OUTBUF:',outbuf.shape)
     shader_consts = dict()
     shader_consts['N_A']             = len(inbufs[0].shape)
     shader_consts['N_B']             = len(inbufs[1].shape)
     shader_consts['N_OUT']           = len(outbuf.shape)
 
-    shader_consts['SHAPE_A']         = str(inbufs[0].shape).replace(',)', ')')
-    shader_consts['SHAPE_B']         = str(inbufs[1].shape).replace(',)', ')')
-    shader_consts['SHAPE_OUT']       = str(outbuf.shape).replace(',)', ')')
+    shader_consts['SHAPE_A']         = to_shape_const_str(inbufs[0].shape)
+    shader_consts['SHAPE_B']         = to_shape_const_str(inbufs[1].shape)
+    shader_consts['SHAPE_OUT']       = to_shape_const_str(outbuf.shape)
 
-    shader_consts['START_INDEX_MAP'] = str(params['dimension_numbers'].start_index_map).replace(',)', ')')
-    shader_consts['SLICE_SIZES']     = str(params['slice_sizes']).replace(',)', ')')
+    shader_consts['START_INDEX_MAP'] = to_shape_const_str(params['dimension_numbers'].start_index_map)
+    shader_consts['SLICE_SIZES']     = to_shape_const_str(params['slice_sizes'])
 
     offset_dims  = tuple(params['dimension_numbers'].offset_dims) + (-1,)
     noffset_dims = tuple([i for i in range(len(inbufs[1].shape)-1) if i not in offset_dims]) + (-1,)
-    shader_consts['OFFSET_DIMS']     = str( offset_dims).replace(',)', ')')
-    shader_consts['NOFFSET_DIMS']    = str(noffset_dims).replace(',)', ')')
+    shader_consts['OFFSET_DIMS']     = to_shape_const_str( offset_dims)
+    shader_consts['NOFFSET_DIMS']    = to_shape_const_str(noffset_dims)
     shader_consts['N_OFF']           = len( offset_dims)
     shader_consts['N_NOFF']          = len(noffset_dims)
+    collapsed_dims  = params['dimension_numbers'].collapsed_slice_dims
+    
+    ncollapsed_dims = [i for i in range(len(inbufs[0].shape)) if i not in collapsed_dims] + [-1]
+    shader_consts['NCOLLAPSED_DIMS'] = to_shape_const_str(ncollapsed_dims)
+    shader_consts['N_NCOLL']         = len(ncollapsed_dims)
 
     return [Op.construct([outbuf]+inbufs, 'gather', equation, **shader_consts)]
 
@@ -484,10 +511,10 @@ def slice(self, equation:jax.core.JaxprEqn):
     N                          = len(inbuf.shape)
     strides                    = equation.params['strides'] or (1,)*N
     shader_consts['N']         = N
-    shader_consts['START']     = str(equation.params['start_indices']).replace(',)',')')
-    shader_consts['STRIDES']   = str(strides).replace(',)',')')
-    shader_consts['SHAPE_A']   = str(inbuf.shape).replace(',)',')')
-    shader_consts['SHAPE_OUT'] = str(outbuf.shape).replace(',)',')')
+    shader_consts['START']     = to_shape_const_str(equation.params['start_indices'])
+    shader_consts['STRIDES']   = to_shape_const_str(strides)
+    shader_consts['SHAPE_A']   = to_shape_const_str(inbuf.shape)
+    shader_consts['SHAPE_OUT'] = to_shape_const_str(outbuf.shape)
 
     shader_bytes = shaders.get_shader('slice', **shader_consts)
     return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]

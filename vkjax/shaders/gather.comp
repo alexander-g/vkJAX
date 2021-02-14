@@ -31,9 +31,12 @@ const int  OFFSET_DIMS[{{N_OFF}}]         = int[]{{OFFSET_DIMS}};
 //the opposite: contains the dimensions not in OFFSET_DIMS
 //last value is to protect against zero dimensions, not used
 const int  NOFFSET_DIMS[{{N_NOFF}}]       = int[]{{NOFFSET_DIMS}};
+//the complement to collapsed_slice_dims: contains dimensions not present there
+//last value is to protect against zero dimensions, not used
+const int  NCOLLAPSED_DIMS[{{N_NCOLL}}]   = int[]{{NCOLLAPSED_DIMS}};
 
 
-//include common.glsl twice
+//include common.glsl three times
 //first parameterized for N_A dimensions
 #define N N_A
 {{COMMON_GLSL}}
@@ -80,11 +83,16 @@ void main() {
     //flat index
     const uint index_a            = ravel_coords(coords_full, SHAPE_A);
 
+    //intermediate coordinates without the collapsed dimensions
+    int coords_collapsed[N_OUT];
+    for(int i=0; i<NCOLLAPSED_DIMS.length()-1; i++)
+        coords_collapsed[i]       = coords_slice[NCOLLAPSED_DIMS[i]];
+
     //compute output coordinates with regard to OFFSET_DIMS
     const int coords_b[N_B]       = unravel_index(index_b*N_I, SHAPE_B);
     int coords_out[N_OUT];
     for(int i=0; i < OFFSET_DIMS.length()-1; i++)
-        coords_out[OFFSET_DIMS[i]] = coords_slice[i];
+        coords_out[OFFSET_DIMS[i]] = coords_collapsed[i];
     for(int i=0; i < NOFFSET_DIMS.length()-1; i++)
         coords_out[NOFFSET_DIMS[i]] = coords_b[i];
     
