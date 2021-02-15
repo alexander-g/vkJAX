@@ -1,0 +1,32 @@
+//adapted from  https://stackoverflow.com/questions/457408/is-there-an-easily-available-implementation-of-erf-for-python
+
+
+#version 450
+
+layout (local_size_x = 32) in;
+
+
+layout(set = 0, binding = 0) writeonly buffer bout { {{DTYPE0}} result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { {{DTYPE1}} in_a[]; };
+
+const {{DTYPE0}} a1 =  0.254829592;
+const {{DTYPE0}} a2 = -0.284496736;
+const {{DTYPE0}} a3 =  1.421413741;
+const {{DTYPE0}} a4 = -1.453152027;
+const {{DTYPE0}} a5 =  1.061405429;
+const {{DTYPE0}} p  =  0.3275911;
+
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+
+          {{DTYPE0}} x     = in_a[index];
+    const {{DTYPE0}} xsign = sign(x);
+                     x     = abs(x);
+    
+    const {{DTYPE0}} t     = 1.0/(1.0 + p*x);
+    const {{DTYPE0}} y     = 1.0 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*exp(-x*x);
+
+    result[index] = xsign * y;
+}
+

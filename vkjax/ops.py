@@ -98,6 +98,7 @@ sub = element_wise_binary_op
 mul = element_wise_binary_op
 div = element_wise_binary_op
 max = element_wise_binary_op
+min = element_wise_binary_op
 gt  = element_wise_binary_op
 ge  = element_wise_binary_op
 lt  = element_wise_binary_op
@@ -105,6 +106,12 @@ eq  = element_wise_binary_op
 #not sure but seeems to be the same
 add_any = add
 pow = element_wise_binary_op
+shift_left             = element_wise_binary_op
+shift_right_logical    = element_wise_binary_op
+shift_right_arithmetic = element_wise_binary_op
+rem                    = element_wise_binary_op
+
+locals()['or']  = element_wise_binary_op
 
 
 
@@ -122,14 +129,15 @@ def element_wise_unary_op(self, equation:jax.core.JaxprEqn):
 
     inbuf  = self.get_or_create_buffer(invar)
     outbuf = self.get_or_create_buffer(outvar)
-    shader_bytes = shaders.get_shader(equation.primitive.name)
-    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+    return [Op.construct([outbuf, inbuf], equation.primitive.name, equation)]
 
 exp = element_wise_unary_op
 log = element_wise_unary_op
 neg = element_wise_unary_op
 abs = element_wise_unary_op
-rsqrt = element_wise_unary_op
+rsqrt   = element_wise_unary_op
+erf     = element_wise_unary_op
+erf_inv = element_wise_unary_op
 
 
 
@@ -416,14 +424,17 @@ def transpose(self, equation:jax.core.JaxprEqn):
 def noop(self, equation:jax.core.JaxprEqn):
     #does not perform any operations
     #simply re-uses the input buffer
-    assert len(equation.invars)==1
-    inbuf = self.get_or_create_buffer(equation.invars[0])
-    self.buffers[equation.outvars[0]] = inbuf
+    assert len(equation.invars)==len(equation.outvars)==1
+    inbuf  = self.get_or_create_buffer(equation.invars[0])
+    outvar = equation.outvars[0]
+    outbuf = Buffer(inbuf.tensor, outvar.aval.dtype, outvar.aval.shape)
+    self.buffers[equation.outvars[0]] = outbuf
     return []
 
 #not relevant for us i think
 stop_gradient        = noop
 squeeze              = noop
+bitcast_convert_type = noop
 
 
 
@@ -524,8 +535,13 @@ def threefry2x32(self, equation:jax.core.JaxprEqn):
     inbufs  = [self.get_or_create_buffer(v) for v in equation.invars]
     outbufs = [self.get_or_create_buffer(v) for v in equation.outvars]
 
-    shader_bytes = shaders.get_shader('threefry2x32')
-    return [Op([b.tensor for b in inbufs+outbufs], shader_bytes, equation)]
+    assert inbufs[0].shape  == inbufs[1].shape
+    assert inbufs[2].shape  == inbufs[3].shape
+    assert outbufs[0].shape == outbufs[1].shape
+
+    shader_consts = dict(KEY_IS_SCALAR = int(inbufs[0].shape in [(), (1,)]) )
+
+    return [Op.construct(outbufs+inbufs, 'threefry2x32', equation, **shader_consts)]
 
 
 def convert_element_type(self, equation:jax.core.JaxprEqn):

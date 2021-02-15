@@ -59,6 +59,8 @@ def lt0(x,y): return x<y
 def eq0(x,y): return x==y
 def eq1(x):   return x==x.max(axis=-1)
 
+def or0(x,y): return x|y
+
 def exp0(x):  return jnp.exp(x)
 def log0(x):  return jnp.log(x)
 def abs0(x):  return jnp.abs(x)
@@ -132,6 +134,17 @@ def threefry1(x):    return jax.random.threefry2x32_p.bind(*x)
 
 def convert_element_type0(x): return x.astype(np.int32)
 def convert_element_type1(x): return x.astype(np.float32)
+def bitcast_convert_type0(x): return jax.lax.bitcast_convert_type(x, 'float32')
+
+shift_left             = jax.lax.shift_left
+shift_right_logical    = jax.lax.shift_right_logical
+shift_right_arithmetic = jax.lax.shift_right_arithmetic
+
+erf     = jax.lax.erf
+erf_inv = jax.lax.erf_inv
+rem     = jax.lax.rem
+min     = jax.lax.min
+max     = jax.lax.max
 
 
 param_matrix = [
@@ -177,6 +190,13 @@ param_matrix = [
     (dot_general2, 'dot axes=(0,1)',    [np.random.random([100,2]), np.random.random([32,100])] ),
 
     (relu0, 'relu0',                    [np.random.random([32,32,32])-0.5]),
+    (max,   'max_float32',              [np.random.random([77,99,200]), np.random.random([77,99,200])]),
+    (min,   'min_float32',              [np.random.random([77,99,200]), np.random.random([77,99,200])]),
+    (max,   'max_int32',                [np.random.randint(-1000,1000,[77,99,200]), 
+                                         np.random.randint(-1000,1000,[77,99,200])]),
+    (min,   'min_int32',                [np.random.randint(-1000,1000,[77,99,200]), 
+                                         np.random.randint(-1000,1000,[77,99,200])]),
+
 
     (reduce_max0, 'max(axis=0)',        [np.random.random([32,32])]),
     (reduce_max1, 'max(axis=1)',        [np.random.random([32,32])-1.0]),
@@ -199,6 +219,8 @@ param_matrix = [
     (eq0, 'eq0',                        [np.random.randint(0,3, size=[32,32]).astype(np.float32), 
                                          np.random.randint(0,3, size=[32,32]).astype(np.float32) ]),
     (eq1, 'eq1 x==x.max(-1)',           [np.random.random([32,32])]),
+    
+    (or0, 'or0 x|y',                    [np.random.random([77,32]).view('uint32'), np.random.random([77,32]).view('uint32')]),
 
     (exp0, 'exp(x)',                    [np.random.uniform(0,5,size=[32,32])]),
     #(log0, 'log(x)',                    [np.random.uniform(0,5,size=[32,32])]), #fails, why? numerical issues?
@@ -249,16 +271,35 @@ param_matrix = [
     (threefry1, 'all ones size=1',      [np.ones(4).astype('uint32')] ),
     (threefry1, 'all random size=1',    [np.random.randint(0,10000000, size=4).astype('uint32')] ),
     (threefry1, 'all random size=65',   [np.random.randint(0,10000000, size=(4,65)).astype('uint32')] ),
+    (threefry1, 'scalar_key_size=100',  [list(np.random.randint(0,10000000, size=(2,)).astype('uint32')) \
+                                        +list(np.random.randint(0,10000000, size=(2,100)).astype('uint32')) ] ),
 
     (convert_element_type0, 'float2int',[np.random.random([77,101])*65]),
     (convert_element_type1, 'int2float',[np.random.randint(77,101, size=(99,99))]),
     (convert_element_type1,'bool2float',[np.random.random([77,101])>0.5]),
+    (bitcast_convert_type0,'uint2float',[np.random.random([77,101]).view('uint32')]),
+
+    (shift_left,             'x<<1',    [np.arange(-777,+777), 1]),
+    (shift_left,             'x<<y',    [np.arange(-777,+777), np.random.randint(0,20, size=777*2)]),
+    (shift_right_logical,    'x>>1',    [np.arange(-777,+777), 1]),
+    (shift_right_logical, 'uint>>1',    [np.arange(-777,+777).view('uint32'), np.uint32(9)]),
+    (shift_right_arithmetic, 'x>>1',    [np.arange(-777,+777), 1]),
+
+    (erf,     'erf(x)',                 [np.random.random([111,283])*10-5]),
+    (erf_inv, 'erf_inv(x)',             [np.random.random([111,283])*2 -1]),
+    (rem,     'rem(x,y)',               [np.random.randint(1000,10000, size=[77,99]), np.random.randint(1000)]),
 ]
+
+
+TOLERANCES = {
+    'erf(x)':    (1e-5, 1e-6),
+    'erf_inv(x)':(1e-5, 2e-3),  #high atol
+}
 
 
 @pytest.mark.parametrize("f,desc,args", param_matrix)
 def test_matrix_kompute_interpreter(f, desc, args):
-    print(f'==========TEST START: {desc}==========')
+    print(f'==========TEST START: {f.__name__} {desc}==========')
     print(f'**********RANDOM SEED: {seed}*********')
     args = jax.tree_map(jnp.asarray, args)
     jaxpr = jax.make_jaxpr(f)(*args)
@@ -277,8 +318,9 @@ def test_matrix_kompute_interpreter(f, desc, args):
     assert np.all(jax.tree_leaves(jax.tree_multimap(lambda x,y: np.shape(x)==np.shape(y), y,ytrue)))
     dtype = lambda x: np.asarray(x).dtype
     assert np.all(jax.tree_leaves(jax.tree_multimap(lambda x,y: dtype(x)==dtype(y),       y,ytrue)))
-    assert np.all(jax.tree_leaves(jax.tree_multimap(lambda x,y: np.allclose(x,y),         y,ytrue)))
-    #assert np.all(jax.tree_leaves(jax.tree_multimap(lambda x,y: np.all(x==y),         y,ytrue)))
+    
+    tols = TOLERANCES.get(desc, [])
+    assert np.all(jax.tree_leaves(jax.tree_multimap(lambda x,y: np.allclose(x,y, *tols, equal_nan=True),  y,ytrue)))
 
     print(f'==========TEST END:  {desc}==========')
     print()

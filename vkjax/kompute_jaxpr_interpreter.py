@@ -62,7 +62,7 @@ class JaxprInterpreter:
         assert len(input_tensors) == len(X)
         for input_tensor, x, var in zip(input_tensors, X, self.jaxpr.jaxpr.invars):
             #kompute always uses float32
-            x = view_as_float32(x.astype(var.aval.dtype))
+            x = view_as_float32(np.asarray(x, dtype=var.aval.dtype))
             input_tensor.set_data(maybe_pad(x))
         
         if len(input_tensors)>0:
@@ -77,9 +77,6 @@ class JaxprInterpreter:
         
         output_bufs    = [self.get_or_create_buffer(var) for var in self.jaxpr.jaxpr.outvars]
         output_values  = [buf.numpy() for buf in output_bufs]
-        #output_values  = [np.asarray(x, dtype=var.aval.dtype) for x,var in zip(output_values, self.jaxpr.jaxpr.outvars)]
-        #output_values  = [x.view(var.aval.dtype) for x,var in zip(output_values, self.jaxpr.jaxpr.outvars)]
-        #output_values  = [convert_or_view(x, var.aval.dtype) for x,var in zip(output_values, self.jaxpr.jaxpr.outvars)]
         output_values  = tuple(output_values)
 
         
