@@ -146,6 +146,8 @@ rem     = jax.lax.rem
 min     = jax.lax.min
 max     = jax.lax.max
 
+nextafter = jax.lax.nextafter
+
 
 param_matrix = [
     (noop, 'noop',                      [5.0]),
@@ -288,6 +290,11 @@ param_matrix = [
     (erf,     'erf(x)',                 [np.random.random([111,283])*10-5]),
     (erf_inv, 'erf_inv(x)',             [np.random.random([111,283])*2 -1]),
     (rem,     'rem(x,y)',               [np.random.randint(1000,10000, size=[77,99]), np.random.randint(1000)]),
+
+    (nextafter, 'nextafter(X,inf)',     [np.random.random([77,101])*2-1, np.inf]),
+    (nextafter, 'nextafter(X,-inf)',    [np.random.random([77,101])*2-1, -np.inf]),
+    (nextafter, 'nextafter(X,0)',       [np.random.random([77,101])*2-1, 0.0]),
+    (nextafter, 'nextafter(X,Y)',       [np.random.random([77,101])*2-1, np.random.random([77,101])]),
 ]
 
 
@@ -325,3 +332,22 @@ def test_matrix_kompute_interpreter(f, desc, args):
     print(f'==========TEST END:  {desc}==========')
     print()
 
+
+
+
+def test_nextafter():
+    x = np.random.random([77,101,5])
+
+    vkfunc = vkjax.wrap(nextafter)
+    ypred = vkfunc(x, np.inf)
+    assert np.all(ypred > x)
+
+    ypred = vkfunc(x, -np.inf)
+    assert np.all(x > ypred)
+
+    ypred = vkfunc(x, 0)
+    assert np.all( np.sign(ypred-x) == np.sign(0-x) )
+
+    x2 = np.random.random(x.shape)
+    ypred = vkfunc(x, x2)
+    assert np.all( np.sign(ypred-x) == np.sign(x2-x) )

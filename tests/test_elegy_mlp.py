@@ -1,7 +1,7 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES']=''
 
-import vkjax
+import vkjax, vkjax.elegy
 
 import jax, jax.numpy as jnp, numpy as np
 import elegy, optax
@@ -122,3 +122,21 @@ def test_basic_training():
     assert np.all([safe_allclose(envpred.get(k, None), vtrue, atol=1e-6)  for k,vtrue in envtrue.items()])
 
 
+
+
+def test_basic_initialization():
+    x = np.random.random([2,32,32,3]).astype(np.float32)
+
+    module   = MLP()
+    vkmodel  = vkjax.elegy.vkModel(module)
+
+    vkmodel.predict(x)
+    vkstates = vkmodel.states
+
+    module = MLP()
+    model  = elegy.Model(module)
+    model.predict(x)
+    states = model.states
+
+    #NOTE: atol higher than default, limited by erf_inv
+    assert np.all(jax.tree_multimap(lambda x,y: np.allclose(x,y, rtol=1e-5, atol=2e-3), jax.tree_leaves(states), jax.tree_leaves(vkstates) ))

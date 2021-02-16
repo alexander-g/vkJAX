@@ -110,6 +110,7 @@ shift_left             = element_wise_binary_op
 shift_right_logical    = element_wise_binary_op
 shift_right_arithmetic = element_wise_binary_op
 rem                    = element_wise_binary_op
+nextafter              = element_wise_binary_op
 
 locals()['or']  = element_wise_binary_op
 
