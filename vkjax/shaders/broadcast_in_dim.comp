@@ -32,7 +32,9 @@ const uint SHAPE_OUT[N_OUT] = uint[]{{SHAPE_OUT}};
 
 void main() {
     //broadcasts input by duplicating
-    const uint index = gl_GlobalInvocationID.x;
+    const uint _index = gl_GlobalInvocationID.x;
+    //out-of-bounds guard
+    const uint index  = _index * uint(_index < shape_to_size(SHAPE_OUT));
     
     const int  coords_out[N_OUT] = unravel_index(index, SHAPE_OUT);
           int  coords_a[N_A];
@@ -45,6 +47,3 @@ void main() {
     const uint index_a = ravel_coords(coords_a, SHAPE_A);
     result[index] = in_a[index_a];
 }
-
-
-//TODO: check out of bounds

@@ -60,7 +60,9 @@ const int  NCOLLAPSED_DIMS[{{N_NCOLL}}]   = int[]{{NCOLLAPSED_DIMS}};
 
 
 void main() {
-    const uint index  = gl_GlobalInvocationID.x;
+    const uint _index  = gl_GlobalInvocationID.x;
+    //out-of-bounds guard
+    const uint index  = _index * uint(_index < shape_to_size(SHAPE_OUT));
 
     //split index into 2 intermediate indices
     //first for finding the start indices in in_b
@@ -99,5 +101,3 @@ void main() {
     const uint index_out = ravel_coords(coords_out, SHAPE_OUT);
     result[index_out]    = in_a[index_a];
 }
-
-//TODO: out-of-bounds checks

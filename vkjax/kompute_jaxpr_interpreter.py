@@ -1,5 +1,6 @@
 import typing as tp
 import time
+import os
 
 from . import ops
 
@@ -15,7 +16,8 @@ class JaxprInterpreter:
         self.static_argnums = static_argnums
         #dict mapping from jax.core.Var or int (for jax.core.Literal) to Buffer
         self.buffers   = {}
-        self.mgr       = kp.Manager()
+        device         = int(os.environ.get('VKJAX_DEVICE', 0))
+        self.mgr       = kp.Manager(device)
 
         self.analyze_closed_jaxpr(jaxpr)
     

@@ -299,8 +299,9 @@ param_matrix = [
 
 
 TOLERANCES = {
-    'erf(x)':    (1e-5, 1e-6),
-    'erf_inv(x)':(1e-5, 2e-3),  #high atol
+    'erf(x)':            (1e-5, 1e-6),
+    'erf_inv(x)':        (1e-5, 2e-3),      #high atol
+    'sum(axis=012)':     (1e-4, 1e-8),      #reduce_sum2 
 }
 
 
