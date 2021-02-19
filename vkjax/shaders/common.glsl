@@ -27,3 +27,36 @@ bool is_out_of_bounds(int[N] coords, uint[N] shape){
     }
     return is_oob;
 }
+
+
+uint shape_to_size(uint[N] shape){
+    uint acc = 1;
+    for(uint i=0; i<N; i++){
+        acc *= shape[i];
+    }
+    return acc;
+}
+
+int[N] add_coords(int[N] a, int[N] b){
+    int[N] c;
+    for(uint i=0; i<N; i++){
+        c[i] = a[i] + b[i];
+    }
+    return c;
+}
+
+int[N] sub_coords(int[N] a, uint[N] b){
+    int[N] c;
+    for(uint i=0; i<N; i++){
+        c[i] = a[i] - int(b[i]);
+    }
+    return c;
+}
+
+int[N] multiply_coords(int[N] a, uint[N] b){
+    int[N] c;
+    for(uint i=0; i<N; i++){
+        c[i] = a[i] * int(b[i]);
+    }
+    return c;
+}

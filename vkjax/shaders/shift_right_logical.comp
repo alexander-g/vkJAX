@@ -6,7 +6,14 @@ layout(set = 0, binding = 0) readonly  buffer bina { {{DTYPE0}} in_a[]; };
 layout(set = 0, binding = 1) readonly  buffer binb { {{DTYPE1}} in_b[]; };
 layout(set = 0, binding = 2) writeonly buffer bout { {{DTYPE2}} result[]; };
 
+
+uint bitwidth(uint x){return 32;}
+uint bitwidth( int x){return 32;}
+
+
 void main() {
-    const uint index = gl_GlobalInvocationID.x;
-    result[index] = in_a[index] + in_b[index];
+    const uint index     = gl_GlobalInvocationID.x; 
+    const {{DTYPE0}} a   = in_a[index];
+    const uint mask      = ~(1u << (bitwidth(a)-1));
+    result[index]        = {{DTYPE0}}((a >> in_b[index]) & mask);
 }

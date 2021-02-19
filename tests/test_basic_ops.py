@@ -19,6 +19,7 @@ def add1(x): return x+1.0
 def add2(x,y): return x+y
 def add3(x,y): return jax.jit(add0)(x) + jax.jit(add2)(y,x)
 def add4(x,y): return jax.jit(add0)(x) + jax.jit(add2)(y, 1.0)
+def add00():   return jax.lax.add(5,100)
 
 def div0(x,y): return x/y
 def sub0(x,y): return x-y
@@ -58,6 +59,8 @@ def lt0(x,y): return x<y
 def eq0(x,y): return x==y
 def eq1(x):   return x==x.max(axis=-1)
 
+def or0(x,y): return x|y
+
 def exp0(x):  return jnp.exp(x)
 def log0(x):  return jnp.log(x)
 def abs0(x):  return jnp.abs(x)
@@ -67,6 +70,10 @@ def iota0():  return jnp.arange(32)
 
 def select0(x,y,z):    return jnp.where(x,y,z)
 def concatenate0(x,y): return jnp.concatenate([x,y], axis=-1)
+
+def gather0(x): return x[:,:,4:7,:]
+def gather1a(x): return x[5,:]
+def gather1b(x): return x[:,5]
 
 #equivalent to x[i[0], i[2]] with x.shape=(B,N), i.shape=(B,1,2)
 gather_fn0 = lambda x,i: jax.lax.gather(x,
@@ -116,6 +123,30 @@ def integer_pow0(x): return x**2
 def integer_pow1(x): return x**5
 def pow0(x,y):       return jax.lax.pow(x,y)
 
+def slice0(x):       return jax.lax.slice(x, [2], [33])
+def slice1(x):       return jax.lax.slice(x, [55,5], [101,10])
+def slice2(x):       return jax.lax.slice(x, [55,5], [101,10], [2,3])
+def squeeze0(x):     return jnp.squeeze(x)
+
+def threefry0a():    return jax.random.threefry2x32_p.bind(*np.ones(4, 'uint32'))
+def threefry0b():    return jax.random.threefry2x32_p.bind(*np.ones([4,10], 'uint32'))
+def threefry1(x):    return jax.random.threefry2x32_p.bind(*x)
+
+def convert_element_type0(x): return x.astype(np.int32)
+def convert_element_type1(x): return x.astype(np.float32)
+def bitcast_convert_type0(x): return jax.lax.bitcast_convert_type(x, 'float32')
+
+shift_left             = jax.lax.shift_left
+shift_right_logical    = jax.lax.shift_right_logical
+shift_right_arithmetic = jax.lax.shift_right_arithmetic
+
+erf     = jax.lax.erf
+erf_inv = jax.lax.erf_inv
+rem     = jax.lax.rem
+min     = jax.lax.min
+max     = jax.lax.max
+
+nextafter = jax.lax.nextafter
 
 
 param_matrix = [
@@ -124,6 +155,7 @@ param_matrix = [
     (add0, 'add x+x scalar',            [5.0], ),
     (add0, 'add x+x array1d',           [np.random.random(32)] ),
     (add0, 'add x+x array3d',           [np.random.random((32,32,32))] ),
+    (add00,'5+100',                     []),
 
     (add1, 'add x+1 scalar',            [5.0] ),
     (add1, 'add x+1 array3d',           [np.random.random((32,32,32))] ),
@@ -132,6 +164,8 @@ param_matrix = [
     (add2, 'add x+y scalar-array3d',    [5.0, np.random.random((32,32,32))]),
     (add2, 'add x+y array3d-array3d',   [np.random.random((32,32,32)), np.random.random((32,32,32))]),
     (add2, 'broadcast_add [2,32]+[32]', [np.random.random((2,32)), np.random.random((32))]),
+
+    (add2, 'add x+y int',               [np.random.randint(65,size=(32,32,32)), np.random.randint(77, size=(32,32,32))]),
 
     (add3, 'add nested (x+x)+(y+x)',    [5.0, 7.1]),
     (add3, 'add nested (x+x)+(y+x)',    [5.0, 7.1]),
@@ -158,6 +192,13 @@ param_matrix = [
     (dot_general2, 'dot axes=(0,1)',    [np.random.random([100,2]), np.random.random([32,100])] ),
 
     (relu0, 'relu0',                    [np.random.random([32,32,32])-0.5]),
+    (max,   'max_float32',              [np.random.random([77,99,200]), np.random.random([77,99,200])]),
+    (min,   'min_float32',              [np.random.random([77,99,200]), np.random.random([77,99,200])]),
+    (max,   'max_int32',                [np.random.randint(-1000,1000,[77,99,200]), 
+                                         np.random.randint(-1000,1000,[77,99,200])]),
+    (min,   'min_int32',                [np.random.randint(-1000,1000,[77,99,200]), 
+                                         np.random.randint(-1000,1000,[77,99,200])]),
+
 
     (reduce_max0, 'max(axis=0)',        [np.random.random([32,32])]),
     (reduce_max1, 'max(axis=1)',        [np.random.random([32,32])-1.0]),
@@ -173,10 +214,15 @@ param_matrix = [
 
     (gt0, 'gt0',                        [np.random.random([32,32]), np.random.random([32,32])]),
     (ge0, 'ge0',                        [np.random.random([32,32]), np.random.random([32,32])]),
+    (ge0, 'ge0 float>=bool',            [np.random.random([32,32])+0.5, np.random.random([32,32])>0.5]),
+    (ge0, 'ge0 bool>=float',            [np.random.random([32,32])>0.5, np.random.random([32,32])+0.5]),
     (lt0, 'lt0',                        [np.random.random([32,32]), np.random.random([32,32])]),
+    (lt0, 'lt0 int[]<scalar',           [np.random.randint(999,size=[999]), 555]),
     (eq0, 'eq0',                        [np.random.randint(0,3, size=[32,32]).astype(np.float32), 
                                          np.random.randint(0,3, size=[32,32]).astype(np.float32) ]),
     (eq1, 'eq1 x==x.max(-1)',           [np.random.random([32,32])]),
+    
+    (or0, 'or0 x|y',                    [np.random.random([77,32]).view('uint32'), np.random.random([77,32]).view('uint32')]),
 
     (exp0, 'exp(x)',                    [np.random.uniform(0,5,size=[32,32])]),
     #(log0, 'log(x)',                    [np.random.uniform(0,5,size=[32,32])]), #fails, why? numerical issues?
@@ -189,6 +235,9 @@ param_matrix = [
     (select0, 'select0',                [np.random.random([32,32])>0.5, np.ones([32,32]), np.zeros([32,32])]),
     (concatenate0, 'concatenate0',      [np.random.random([32,32,32]), np.random.random([32,32,16])]),
 
+    (gather0, 'gather0',                [np.random.random([100,100,100,100])]),
+    (gather1a, 'gather1a x[5,:]',       [np.random.random([8,8])]),
+    (gather1b, 'gather1b x[:,5]',       [np.random.random([8,8])]),
     (gather_fn0, 'gather_fn0',          [np.random.random([32,10]), 
                                          np.c_[np.random.randint(0,32, size=[32]), 
                                                np.random.randint(0,10, size=[32])].reshape(32,1,2) ]),
@@ -197,8 +246,8 @@ param_matrix = [
                                                np.random.randint(0,10, size=[32])].reshape(32,1,2),
                                          np.random.random([32]).reshape(32,1) ]),
     (take_along_axis0, 'take_along0',   [np.random.random([32,10]), np.random.randint(0,10, size=32)[:,np.newaxis] ]),
-    #(take_along_axis0_g, 'take0_grad',  [np.random.random([32,10]), np.random.randint(0,10, size=32)[:,np.newaxis] ]),
-    (take_along_axis0_g, 'take0_grad',  [np.random.random([3,4]), np.random.randint(0,4, size=3)[:,np.newaxis] ]),
+    (take_along_axis0_g, 'take0_grad',  [np.random.random([32,10]), np.random.randint(0,10, size=32)[:,np.newaxis] ]),
+    #(take_along_axis0_g, 'take0_grad',  [np.random.random([3,4]), np.random.randint(0,4, size=3)[:,np.newaxis] ]),
 
     (gather_fn1, 'gather_fn1',          [np.random.random([32,10]), np.random.randint(0,10, size=[1]) ]),
     (scatter_add_fn1, 'scatter_add1',   [np.random.random([32,10]), np.random.randint(0,10, size=[1]), np.random.random(32)]),
@@ -212,12 +261,53 @@ param_matrix = [
     (integer_pow0, 'x**2',              [np.random.random([77,9,35])]),
     (integer_pow1, 'x**5',              [np.random.random([77,9,35])]),
     (pow0, 'x**scalar',                 [np.random.random([77,9,35]), np.random.random()]),
+
+    (slice0, '1-D slice(x, [2],[5])',   [np.random.random([99])]),
+    (slice1, '2-D slice no strides',    [np.random.random([199,99])]),
+    (slice2, '2-D slice + strides',     [np.random.random([199,99])]),
+    (squeeze0, '5-D squeeze',           [np.random.random([199,99,1,1,5])]),
+
+    (threefry0a,'all const size=1',     [] ),
+    (threefry0b,'all const size=n',     [] ),
+    (threefry1, 'all zero size=1',      [np.zeros(4).astype('uint32')] ),
+    (threefry1, 'all ones size=1',      [np.ones(4).astype('uint32')] ),
+    (threefry1, 'all random size=1',    [np.random.randint(0,10000000, size=4).astype('uint32')] ),
+    (threefry1, 'all random size=65',   [np.random.randint(0,10000000, size=(4,65)).astype('uint32')] ),
+    (threefry1, 'scalar_key_size=100',  [list(np.random.randint(0,10000000, size=(2,)).astype('uint32')) \
+                                        +list(np.random.randint(0,10000000, size=(2,100)).astype('uint32')) ] ),
+
+    (convert_element_type0, 'float2int',[np.random.random([77,101])*65]),
+    (convert_element_type1, 'int2float',[np.random.randint(77,101, size=(99,99))]),
+    (convert_element_type1,'bool2float',[np.random.random([77,101])>0.5]),
+    (bitcast_convert_type0,'uint2float',[np.random.random([77,101]).view('uint32')]),
+
+    (shift_left,             'x<<1',    [np.arange(-777,+777), 1]),
+    (shift_left,             'x<<y',    [np.arange(-777,+777), np.random.randint(0,20, size=777*2)]),
+    (shift_right_logical,    'x>>1',    [np.arange(-777,+777), 1]),
+    (shift_right_logical, 'uint>>1',    [np.arange(-777,+777).view('uint32'), np.uint32(9)]),
+    (shift_right_arithmetic, 'x>>1',    [np.arange(-777,+777), 1]),
+
+    (erf,     'erf(x)',                 [np.random.random([111,283])*10-5]),
+    (erf_inv, 'erf_inv(x)',             [np.random.random([111,283])*2 -1]),
+    (rem,     'rem(x,y)',               [np.random.randint(1000,10000, size=[77,99]), np.random.randint(1000)]),
+
+    (nextafter, 'nextafter(X,inf)',     [np.random.random([77,101])*2-1, np.inf]),
+    (nextafter, 'nextafter(X,-inf)',    [np.random.random([77,101])*2-1, -np.inf]),
+    (nextafter, 'nextafter(X,0)',       [np.random.random([77,101])*2-1, 0.0]),
+    (nextafter, 'nextafter(X,Y)',       [np.random.random([77,101])*2-1, np.random.random([77,101])]),
 ]
+
+
+TOLERANCES = {
+    'erf(x)':            (1e-5, 1e-6),
+    'erf_inv(x)':        (1e-5, 2e-3),      #high atol
+    'sum(axis=012)':     (1e-4, 1e-8),      #reduce_sum2 
+}
 
 
 @pytest.mark.parametrize("f,desc,args", param_matrix)
 def test_matrix_kompute_interpreter(f, desc, args):
-    print(f'==========TEST START: {desc}==========')
+    print(f'==========TEST START: {f.__name__} {desc}==========')
     print(f'**********RANDOM SEED: {seed}*********')
     args = jax.tree_map(jnp.asarray, args)
     jaxpr = jax.make_jaxpr(f)(*args)
@@ -231,13 +321,34 @@ def test_matrix_kompute_interpreter(f, desc, args):
     print()
     print(ytrue)
 
+
     assert jax.tree_structure(y) == jax.tree_structure(ytrue)
     assert np.all(jax.tree_leaves(jax.tree_multimap(lambda x,y: np.shape(x)==np.shape(y), y,ytrue)))
     dtype = lambda x: np.asarray(x).dtype
     assert np.all(jax.tree_leaves(jax.tree_multimap(lambda x,y: dtype(x)==dtype(y),       y,ytrue)))
-    assert np.all(jax.tree_leaves(jax.tree_multimap(lambda x,y: np.allclose(x,y),         y,ytrue)))
-    #assert np.all(jax.tree_leaves(jax.tree_multimap(lambda x,y: np.all(x==y),         y,ytrue)))
+    
+    tols = TOLERANCES.get(desc, [])
+    assert np.all(jax.tree_leaves(jax.tree_multimap(lambda x,y: np.allclose(x,y, *tols, equal_nan=True),  y,ytrue)))
 
     print(f'==========TEST END:  {desc}==========')
     print()
 
+
+
+
+def test_nextafter():
+    x = np.random.random([77,101,5])
+
+    vkfunc = vkjax.wrap(nextafter)
+    ypred = vkfunc(x, np.inf)
+    assert np.all(ypred > x)
+
+    ypred = vkfunc(x, -np.inf)
+    assert np.all(x > ypred)
+
+    ypred = vkfunc(x, 0)
+    assert np.all( np.sign(ypred-x) == np.sign(0-x) )
+
+    x2 = np.random.random(x.shape)
+    ypred = vkfunc(x, x2)
+    assert np.all( np.sign(ypred-x) == np.sign(x2-x) )

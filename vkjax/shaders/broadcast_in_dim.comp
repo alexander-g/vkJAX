@@ -2,50 +2,48 @@
 
 layout (local_size_x = 32) in;
 
-layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
-layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };
+layout(set = 0, binding = 0) writeonly buffer bout { {{DTYPE0}} result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { {{DTYPE1}} in_a[]; };
 
 
 //constants are injected in python
-const uint N             = {{N}};
-const uint SHAPE_IN[N]  = uint[]( {{SHAPE_IN}} );
-const uint SHAPE_OUT[N] = uint[]( {{SHAPE_OUT}} );
+const uint N_A              = {{N_A}};
+const uint SHAPE_A[N_A]     = uint[]{{SHAPE_A}};
+const uint BCAST_DIM[N_A]   = uint[]{{BCAST_DIM}};
+
+const uint N_OUT            = {{N_OUT}};
+const uint SHAPE_OUT[N_OUT] = uint[]{{SHAPE_OUT}};
 
 
-uint[N] unravel_index(uint index, uint[N] shape){
-    uint[N] coords;
-    for(int i=int(N)-1; i>=0; i--){
-        coords[i] = index % shape[i];
-        index     = index / shape[i]; 
-    }
-    return coords;
-}
 
-uint ravel_coords(uint[N] coords, uint[N] shape){
-    uint index  = 0;
-    uint stride = 1;
-    for(int i=int(N)-1; i>=0; i--){
-        index  += coords[i]*stride;
-        stride *= shape[i];
-    }
-    return index;
-}
+//include common.glsl twice
+//first parameterized for N_A dimensions
+#define N N_A
+{{COMMON_GLSL}}
+#undef N
 
+//then (maybe) parameterized for N_OUT dimensions
+#if {{N_A}} != {{N_OUT}}
+    #define N N_OUT
+    {{COMMON_GLSL}}
+    #undef N
+#endif
 
 
 void main() {
     //broadcasts input by duplicating
-    const uint index = gl_GlobalInvocationID.x;
+    const uint _index = gl_GlobalInvocationID.x;
+    //out-of-bounds guard
+    const uint index  = _index * uint(_index < shape_to_size(SHAPE_OUT));
     
-
-    uint[N] coords;
-    coords = unravel_index(index, SHAPE_OUT);
-    
-    for(int i=0; i<N; i++){
-        //set coords to zero where shapes are not equal
-        coords[i] *= uint(SHAPE_OUT[i]==SHAPE_IN[i]);
+    const int  coords_out[N_OUT] = unravel_index(index, SHAPE_OUT);
+          int  coords_a[N_A];
+    for(int i=0; i<N_A; i++){
+        uint dim = BCAST_DIM[i];
+             dim = dim * uint(SHAPE_A[i] == SHAPE_OUT[dim]);
+        coords_a[i] = coords_out[dim];
     }
     
-    const uint index_a = ravel_coords(coords, SHAPE_IN);
+    const uint index_a = ravel_coords(coords_a, SHAPE_A);
     result[index] = in_a[index_a];
 }

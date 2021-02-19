@@ -1,0 +1,42 @@
+//adapted from https://stackoverflow.com/questions/27229371/inverse-error-function-in-c
+
+#version 450
+
+layout (local_size_x = 32) in;
+
+
+layout(set = 0, binding = 0) writeonly buffer bout { {{DTYPE0}} result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { {{DTYPE1}} in_a[]; };
+
+
+const {{DTYPE0}} C  = 0.15449436008930206298828125;
+const {{DTYPE0}} PI = 3.1415926535897932384626433;
+
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+
+          {{DTYPE0}} x     = in_a[index];
+    const {{DTYPE0}} xsign = sign(x);
+                     x     = (1-x)*(1+x);
+    const {{DTYPE0}} lnx   = log(x);
+    const {{DTYPE0}} tt1   = 2/(PI * C) + 0.5*lnx;
+    const {{DTYPE0}} tt2   = 1/C * lnx; 
+
+    result[index] = xsign * sqrt( -tt1 + sqrt(tt1*tt1-tt2) );
+}
+
+
+
+/*
+def erf_inv(x):
+    sign = np.sign(x)
+    
+    x = (1-x)*(1+x)
+    lnx = np.log(x)
+    
+    tt1 = 2/(np.pi*C) + 0.5*lnx
+    tt2 = 1/C * lnx
+    
+    return sign*np.sqrt(-tt1 + np.sqrt(tt1*tt1-tt2))
+    */

@@ -1,7 +1,7 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES']=''
 
-import vkjax
+import vkjax, vkjax.elegy
 
 import jax, jax.numpy as jnp, numpy as np
 import elegy, optax
@@ -59,6 +59,7 @@ def test_scce():
     scce  = lambda x,y: elegy.losses.sparse_categorical_crossentropy(y,x).mean()
     X     = np.random.random([8,10]), np.random.randint(0,10, size=8)
     jaxpr = jax.make_jaxpr(scce)(*X)
+    print(jaxpr)
     vkfunc = vkjax.Function(scce)
 
     ypred = vkfunc(*X)
@@ -117,8 +118,25 @@ def test_basic_training():
     jaxpr       = interpreter.jaxpr
     _, envtrue  = eval_jaxpr(jaxpr.jaxpr, jaxpr.literals, x, y, None,None, model.states, return_env=True)
     _, envpred  = interpreter.run(x, y, 'train', None,None, model.states, False, return_all=True)
-    #_, envpred = interpreter.run(x, y,  None,None, model.states, return_all=True)
     #XXX:atol higher than default
     assert np.all([safe_allclose(envpred.get(k, None), vtrue, atol=1e-6)  for k,vtrue in envtrue.items()])
 
 
+
+
+def test_basic_initialization():
+    x = np.random.random([2,32,32,3]).astype(np.float32)
+
+    module   = MLP()
+    vkmodel  = vkjax.elegy.vkModel(module)
+
+    vkmodel.predict(x)
+    vkstates = vkmodel.states
+
+    module = MLP()
+    model  = elegy.Model(module)
+    model.predict(x)
+    states = model.states
+
+    #NOTE: atol higher than default, limited by erf_inv
+    assert np.all(jax.tree_multimap(lambda x,y: np.allclose(x,y, rtol=1e-5, atol=2e-3), jax.tree_leaves(states), jax.tree_leaves(vkstates) ))

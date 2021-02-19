@@ -1,0 +1,103 @@
+#version 450
+
+layout (local_size_x = 32) in;
+
+layout(set = 0, binding = 0) writeonly buffer bout { {{DTYPE0}} result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { {{DTYPE1}} in_a[]; };     //operand
+layout(set = 0, binding = 2) readonly  buffer binb { int        in_b[]; };     //start_indices
+
+
+//constants injected in python
+//number of dimensions of output
+const int  N_OUT                          = {{N_OUT}};
+//number of dimensions of operand
+const int  N_A                            = {{N_A}};
+//number of dimensions of starting indices
+const int  N_B                            = {{N_B}};
+//shape of output
+const uint SHAPE_OUT[N_OUT]               = uint[]{{SHAPE_OUT}};
+//shape of operand
+const uint SHAPE_A[N_A]                   = uint[]{{SHAPE_A}};
+//shape of of starting indices
+const uint SHAPE_B[N_B]                   = uint[]{{SHAPE_B}};
+//number of dimensions of indices (1...N_A)
+const uint N_I                            = SHAPE_B[N_B-1];
+
+const uint SLICE_SIZES[N_A]               = uint[]{{SLICE_SIZES}};
+const int  START_INDEX_MAP[N_I]           = int[]{{START_INDEX_MAP}};
+
+//last value is to protect against zero dimensions, not used
+const int  OFFSET_DIMS[{{N_OFF}}]         = int[]{{OFFSET_DIMS}};
+//the opposite: contains the dimensions not in OFFSET_DIMS
+//last value is to protect against zero dimensions, not used
+const int  NOFFSET_DIMS[{{N_NOFF}}]       = int[]{{NOFFSET_DIMS}};
+//the complement to collapsed_slice_dims: contains dimensions not present there
+//last value is to protect against zero dimensions, not used
+const int  NCOLLAPSED_DIMS[{{N_NCOLL}}]   = int[]{{NCOLLAPSED_DIMS}};
+
+
+//include common.glsl three times
+//first parameterized for N_A dimensions
+#define N N_A
+{{COMMON_GLSL}}
+#undef N
+
+//then (maybe) parameterized for N_B dimensions
+#if {{N_A}} != {{N_B}}
+    #define N N_B
+    {{COMMON_GLSL}}
+    #undef N
+#endif
+
+//then (maybe) parameterized for N_OUT dimensions
+#if {{N_A}} != {{N_OUT}} && {{N_B}} != {{N_OUT}}
+    #define N N_OUT
+    {{COMMON_GLSL}}
+    #undef N
+#endif
+
+
+
+
+void main() {
+    const uint _index  = gl_GlobalInvocationID.x;
+    //out-of-bounds guard
+    const uint index  = _index * uint(_index < shape_to_size(SHAPE_OUT));
+
+    //split index into 2 intermediate indices
+    //first for finding the start indices in in_b
+    //second for local offset within a slice 
+    const uint SIZE_SLICE     = shape_to_size(SLICE_SIZES);
+    const uint index_b        = index / SIZE_SLICE;
+    const uint index_slice    = index % SIZE_SLICE;
+
+    //get the starting coords from in_b and extend it to the dimensions of in_a
+    int coords_start[N_A];
+    for(int i=0; i < N_A; i++)
+        coords_start[i] = 0;
+    for(int i=0; i < N_I; i++)
+        coords_start[START_INDEX_MAP[i]] = in_b[index_b*N_I + i];
+
+    //compute offset coordinates within slice, i.e. relative to starting index
+    const int  coords_slice[N_A]  = unravel_index(index_slice, SLICE_SIZES);
+    //absolute coordinates
+    const int  coords_full[N_A]   = add_coords(coords_start, coords_slice);
+    //flat index
+    const uint index_a            = ravel_coords(coords_full, SHAPE_A);
+
+    //intermediate coordinates without the collapsed dimensions
+    int coords_collapsed[N_OUT];
+    for(int i=0; i<NCOLLAPSED_DIMS.length()-1; i++)
+        coords_collapsed[i]       = coords_slice[NCOLLAPSED_DIMS[i]];
+
+    //compute output coordinates with regard to OFFSET_DIMS
+    const int coords_b[N_B]       = unravel_index(index_b*N_I, SHAPE_B);
+    int coords_out[N_OUT];
+    for(int i=0; i < OFFSET_DIMS.length()-1; i++)
+        coords_out[OFFSET_DIMS[i]] = coords_collapsed[i];
+    for(int i=0; i < NOFFSET_DIMS.length()-1; i++)
+        coords_out[NOFFSET_DIMS[i]] = coords_b[i];
+    
+    const uint index_out = ravel_coords(coords_out, SHAPE_OUT);
+    result[index_out]    = in_a[index_a];
+}

@@ -8,5 +8,5 @@ layout(set = 0, binding = 2) writeonly buffer bout { {{DTYPE2}} result[]; };
 
 void main() {
     const uint index = gl_GlobalInvocationID.x;
-    result[index] = in_a[index] + in_b[index];
+    result[index] = in_a[index] | in_b[index];
 }

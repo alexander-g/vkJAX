@@ -4,8 +4,9 @@ layout (local_size_x = 32) in;
 
 
 layout(set = 0, binding = 0) writeonly buffer bout { {{DTYPE0}} result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { {{DTYPE1}} in_a[]; };
 
 void main() {
     const uint index = gl_GlobalInvocationID.x;
-    result[index] = {{DTYPE0}}(index);
+    result[index] = {{DTYPE0}}(in_a[index]);
 }

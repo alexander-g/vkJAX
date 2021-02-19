@@ -1,0 +1,91 @@
+//adapted from https://github.com/hawkinsp/jax/blob/56d0056b01d8998f9c2bd98c444bdcfdd93940b8/jaxlib/cuda_prng_kernels.cu.cc
+
+
+#version 450
+
+layout (local_size_x = 32) in;
+
+//kompute currently only supports float, will be static-casted to uint
+layout(set = 0, binding = 0) writeonly buffer bouta { uint out0[]; };
+layout(set = 0, binding = 1) writeonly buffer boutb { uint out1[]; };
+layout(set = 0, binding = 2) readonly  buffer bina  { uint in_key0[]; };
+layout(set = 0, binding = 3) readonly  buffer binb  { uint in_key1[]; };
+layout(set = 0, binding = 4) readonly  buffer binc  { uint in_data0[]; };
+layout(set = 0, binding = 5) readonly  buffer bind  { uint in_data1[]; };
+
+
+//constant, injected in python
+const bool KEY_IS_SCALAR = bool({{KEY_IS_SCALAR}});
+
+
+
+
+// Rotation distances specified by the Threefry2x32 algorithm.
+const uint rotations[8] = {13, 15, 26, 6, 17, 29, 16, 24};
+
+uint rotate_left(uint v, uint distance) {
+    return (v << distance) | (v >> (32 - distance));
+}
+
+uint[2] round(uint[2] v, uint rotation) {
+    uint result[2];
+    result[0] = v[0] + v[1];
+    result[1] = rotate_left(v[1], rotation);
+    result[1] ^= result[0];
+    return result;
+}
+
+void main() {
+    const uint idx     = gl_GlobalInvocationID.x;
+    const uint key_idx = idx * uint(!KEY_IS_SCALAR);
+    
+    uint x[2];
+    uint ks[3];
+
+    // 0x1BD11BDA is a parity constant specified by the ThreeFry2x32 algorithm.
+    ks[2] = 0x1BD11BDA;
+
+    ks[0] = in_key0[key_idx];
+    x[0]  = in_data0[idx];
+    ks[2] = ks[2] ^ in_key0[key_idx];
+
+    ks[1] = in_key1[key_idx];
+    x[1]  = in_data1[idx];
+    ks[2] = ks[2] ^ in_key1[key_idx];
+
+
+    x[0] = x[0] + ks[0];
+    x[1] = x[1] + ks[1];
+    for (int i = 0; i < 4; ++i) {
+      x = round(x, rotations[i]);
+    }
+
+    x[0] = x[0] + ks[1];
+    x[1] = x[1] + ks[2] + 1u;
+    for (int i = 4; i < 8; ++i) {
+      x = round(x, rotations[i]);
+    }
+
+    x[0] = x[0] + ks[2];
+    x[1] = x[1] + ks[0] + 2u;
+    for (int i = 0; i < 4; ++i) {
+      x = round(x, rotations[i]);
+    }
+
+    x[0] = x[0] + ks[0];
+    x[1] = x[1] + ks[1] + 3u;
+    for (int i = 4; i < 8; ++i) {
+      x = round(x, rotations[i]);
+    }
+
+    x[0] = x[0] + ks[1];
+    x[1] = x[1] + ks[2] + 4u;
+    for (int i = 0; i < 4; ++i) {
+      x = round(x, rotations[i]);
+    }
+
+
+    out0[idx] = x[0] + ks[2];
+    out1[idx] = x[1] + ks[0] + 5u;
+
+}

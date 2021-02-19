@@ -1,0 +1,28 @@
+#version 450
+
+layout (local_size_x = 32) in;
+
+layout(set = 0, binding = 0) readonly  buffer bina { {{DTYPE0}} in_a[]; };
+layout(set = 0, binding = 1) readonly  buffer binb { {{DTYPE1}} in_b[]; };
+layout(set = 0, binding = 2) writeonly buffer bout { {{DTYPE2}} result[]; };
+
+
+float epsilon(float x){
+    //XXX: not sure if this always applies
+    return 1.1920929e-07;
+}
+
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+
+    const {{DTYPE0}} a = in_a[index];
+    const {{DTYPE1}} b = in_b[index];
+
+    const {{DTYPE0}} direction = sign(b-a);
+
+    int exponent;
+    const {{DTYPE0}} mantissa = frexp(a, exponent);
+    
+    result[index] = (mantissa + epsilon(a)*direction ) * pow(2,exponent);
+}
