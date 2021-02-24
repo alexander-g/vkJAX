@@ -102,7 +102,9 @@ min = element_wise_binary_op
 gt  = element_wise_binary_op
 ge  = element_wise_binary_op
 lt  = element_wise_binary_op
+le  = element_wise_binary_op
 eq  = element_wise_binary_op
+ne  = element_wise_binary_op
 #not sure but seeems to be the same
 add_any = add
 pow = element_wise_binary_op
@@ -113,6 +115,7 @@ rem                    = element_wise_binary_op
 nextafter              = element_wise_binary_op
 
 locals()['or']  = element_wise_binary_op
+locals()['and'] = element_wise_binary_op
 
 
 

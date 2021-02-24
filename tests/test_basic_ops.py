@@ -56,10 +56,13 @@ def reduce_prod0(x): return jnp.prod(x, axis=0)
 def gt0(x,y): return x>y
 def ge0(x,y): return x>=y
 def lt0(x,y): return x<y
+def le0(x,y): return x<=y
 def eq0(x,y): return x==y
 def eq1(x):   return x==x.max(axis=-1)
+def ne0(x,y): return x!=y
 
 def or0(x,y): return x|y
+def and0(x,y):return x&y
 
 def exp0(x):  return jnp.exp(x)
 def log0(x):  return jnp.log(x)
@@ -218,11 +221,14 @@ param_matrix = [
     (ge0, 'ge0 bool>=float',            [np.random.random([32,32])>0.5, np.random.random([32,32])+0.5]),
     (lt0, 'lt0',                        [np.random.random([32,32]), np.random.random([32,32])]),
     (lt0, 'lt0 int[]<scalar',           [np.random.randint(999,size=[999]), 555]),
+    (le0, 'le0',                        [np.random.random([77,99]), np.random.random([77,99])]),
     (eq0, 'eq0',                        [np.random.randint(0,3, size=[32,32]).astype(np.float32), 
                                          np.random.randint(0,3, size=[32,32]).astype(np.float32) ]),
     (eq1, 'eq1 x==x.max(-1)',           [np.random.random([32,32])]),
+    (ne0, 'x!=y',                       [np.random.random([77,99]), np.random.random([77,99])]),
     
     (or0, 'or0 x|y',                    [np.random.random([77,32]).view('uint32'), np.random.random([77,32]).view('uint32')]),
+    (and0,'and0 x|y',                   [np.random.random([77,32]).view('uint32'), np.random.random([77,32]).view('uint32')]),
 
     (exp0, 'exp(x)',                    [np.random.uniform(0,5,size=[32,32])]),
     #(log0, 'log(x)',                    [np.random.uniform(0,5,size=[32,32])]), #fails, why? numerical issues?
