@@ -309,11 +309,17 @@ param_matrix = [
     (nextafter, 'nextafter(X,Y)',       [np.random.random([77,101])*2-1, np.random.random([77,101])]),
 ]
 
+for fname in ['cos', 'sin', 'tan', 'cosh', 'sinh', 'tanh', 'acos', 'asin', 'atan', 'acosh', 'asinh', 'atanh']:
+    param_matrix += [ (getattr(jax.lax, fname), fname, [np.random.random([77,101])] ) ]
+
 
 TOLERANCES = {
     'erf(x)':            (1e-5, 1e-6),
     'erf_inv(x)':        (1e-5, 2e-3),      #high atol
     'sum(axis=012)':     (1e-4, 1e-8),      #reduce_sum2 
+    'sin':               (1e-5, 1e-6),
+    'sinh':              (1e-5, 1e-6),
+    'tan':               (1e-5, 1e-6),
 }
 
 

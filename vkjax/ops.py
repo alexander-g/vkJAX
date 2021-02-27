@@ -144,6 +144,19 @@ erf     = element_wise_unary_op
 erf_inv = element_wise_unary_op
 
 
+def templated_unary_op(self, equation:jax.core.JaxprEqn):
+    inbuf  = self.get_or_create_buffer(equation.invars[0])
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
+    assert outbuf.shape == inbuf.shape
+    assert outbuf.dtype == inbuf.dtype == np.float32
+
+    shader_consts = dict(FUNCTION=equation.primitive.name)
+    return [Op.construct([outbuf, inbuf], 'unary_op', equation, **shader_consts)]
+
+for fname in ['cos', 'sin', 'tan', 'cosh', 'sinh', 'tanh', 'acos', 'asin', 'atan', 'acosh', 'asinh', 'atanh']:
+    locals()[fname] = templated_unary_op
+
+
 
 
 def broadcast(self, buf:Buffer, newvar:jax.core.Var, dtype:np.dtype):
