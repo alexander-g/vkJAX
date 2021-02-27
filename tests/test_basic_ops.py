@@ -309,8 +309,10 @@ param_matrix = [
     (nextafter, 'nextafter(X,Y)',       [np.random.random([77,101])*2-1, np.random.random([77,101])]),
 ]
 
-for fname in ['cos', 'sin', 'tan', 'cosh', 'sinh', 'tanh', 'acos', 'asin', 'atan', 'acosh', 'asinh', 'atanh']:
-    param_matrix += [ (getattr(jax.lax, fname), fname, [np.random.random([77,101])] ) ]
+for fname in ['cos', 'sin', 'tan', 'cosh', 'sinh', 'tanh', 
+              'acos', 'asin', 'atan', 'acosh', 'asinh', 'atanh',
+              'ceil', 'floor', 'sign']:
+    param_matrix += [ (getattr(jax.lax, fname), fname, [np.random.random([77,101])*2-1] ) ]
 
 
 TOLERANCES = {

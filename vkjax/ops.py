@@ -153,7 +153,9 @@ def templated_unary_op(self, equation:jax.core.JaxprEqn):
     shader_consts = dict(FUNCTION=equation.primitive.name)
     return [Op.construct([outbuf, inbuf], 'unary_op', equation, **shader_consts)]
 
-for fname in ['cos', 'sin', 'tan', 'cosh', 'sinh', 'tanh', 'acos', 'asin', 'atan', 'acosh', 'asinh', 'atanh']:
+for fname in ['cos', 'sin', 'tan', 'cosh', 'sinh', 'tanh',
+              'acos', 'asin', 'atan', 'acosh', 'asinh', 'atanh',
+              'ceil', 'floor', 'sign']:
     locals()[fname] = templated_unary_op
 
 
