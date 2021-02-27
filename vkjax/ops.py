@@ -102,7 +102,9 @@ min = element_wise_binary_op
 gt  = element_wise_binary_op
 ge  = element_wise_binary_op
 lt  = element_wise_binary_op
+le  = element_wise_binary_op
 eq  = element_wise_binary_op
+ne  = element_wise_binary_op
 #not sure but seeems to be the same
 add_any = add
 pow = element_wise_binary_op
@@ -113,6 +115,7 @@ rem                    = element_wise_binary_op
 nextafter              = element_wise_binary_op
 
 locals()['or']  = element_wise_binary_op
+locals()['and'] = element_wise_binary_op
 
 
 
@@ -139,6 +142,21 @@ abs = element_wise_unary_op
 rsqrt   = element_wise_unary_op
 erf     = element_wise_unary_op
 erf_inv = element_wise_unary_op
+
+
+def templated_unary_op(self, equation:jax.core.JaxprEqn):
+    inbuf  = self.get_or_create_buffer(equation.invars[0])
+    outbuf = self.get_or_create_buffer(equation.outvars[0])
+    assert outbuf.shape == inbuf.shape
+    assert outbuf.dtype == inbuf.dtype == np.float32
+
+    shader_consts = dict(FUNCTION=equation.primitive.name)
+    return [Op.construct([outbuf, inbuf], 'unary_op', equation, **shader_consts)]
+
+for fname in ['cos', 'sin', 'tan', 'cosh', 'sinh', 'tanh',
+              'acos', 'asin', 'atan', 'acosh', 'asinh', 'atanh',
+              'ceil', 'floor', 'sign']:
+    locals()[fname] = templated_unary_op
 
 
 
@@ -312,8 +330,11 @@ def reduce_op(self, equation:jax.core.JaxprEqn):
     return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
 
 reduce_max  = reduce_op
+reduce_min  = reduce_op
 reduce_sum  = reduce_op
 reduce_prod = reduce_op
+argmin      = reduce_op
+argmax      = reduce_op
 
 
 def select(self, equation:jax.core.JaxprEqn):

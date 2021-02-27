@@ -44,6 +44,7 @@ def dot_general2(x,y): return jax.lax.dot_general(x,y, (((0,), (1,)), ((), ())) 
 def relu0(x): return jax.nn.relu(x)
 
 def reduce_max0(x): return jnp.max(x, axis=0)
+def reduce_min0(x): return jnp.min(x, axis=0)
 def reduce_max1(x): return jnp.max(x, axis=1)
 def reduce_max2(x): return jnp.max(x, axis=[1,2,5])
 def reduce_sum0(x): return jnp.sum(x, axis=0)
@@ -52,14 +53,19 @@ def reduce_sum2(x): return jnp.sum(x, axis=[0,1,2])
 def no_reduce0(x):  return jnp.sum(x, axis=())  #fails, like reshape0
 def no_reduce1(x):  return jnp.sum(x+1, axis=())
 def reduce_prod0(x): return jnp.prod(x, axis=0)
+def argmax0(x):      return jnp.argmax(x, axis=0)
+def argmin0(x):      return jnp.argmin(x, axis=0)
 
 def gt0(x,y): return x>y
 def ge0(x,y): return x>=y
 def lt0(x,y): return x<y
+def le0(x,y): return x<=y
 def eq0(x,y): return x==y
 def eq1(x):   return x==x.max(axis=-1)
+def ne0(x,y): return x!=y
 
 def or0(x,y): return x|y
+def and0(x,y):return x&y
 
 def exp0(x):  return jnp.exp(x)
 def log0(x):  return jnp.log(x)
@@ -201,6 +207,7 @@ param_matrix = [
 
 
     (reduce_max0, 'max(axis=0)',        [np.random.random([32,32])]),
+    (reduce_min0, 'min(axis=0)',        [np.random.random([77,99])]),
     (reduce_max1, 'max(axis=1)',        [np.random.random([32,32])-1.0]),
     (reduce_max2, 'max(axis=125)',      [np.random.random([3,33,67,99,4,7])]),
     (reduce_sum0, 'sum(axis=0) 2D',     [np.random.random([32,32])]),
@@ -209,6 +216,8 @@ param_matrix = [
     (reduce_sum2, 'sum(axis=012)',      [np.random.random([65,77,22,7])]),
     #(no_reduce0, 'no_reduce0(axis=())', [np.random.random([32])]),
     (no_reduce1, 'no_reduce1(axis=())', [np.random.random([32])]),
+    (argmax0, 'argmax(axis=0)',         [np.random.random([99,77])]),
+    (argmin0, 'argmin(axis=0)',         [np.random.random([99,77])]),
     
     (reduce_prod0,'prod(axis=0)',       [np.random.random([32,32])+0.5]),
 
@@ -218,11 +227,14 @@ param_matrix = [
     (ge0, 'ge0 bool>=float',            [np.random.random([32,32])>0.5, np.random.random([32,32])+0.5]),
     (lt0, 'lt0',                        [np.random.random([32,32]), np.random.random([32,32])]),
     (lt0, 'lt0 int[]<scalar',           [np.random.randint(999,size=[999]), 555]),
+    (le0, 'le0',                        [np.random.random([77,99]), np.random.random([77,99])]),
     (eq0, 'eq0',                        [np.random.randint(0,3, size=[32,32]).astype(np.float32), 
                                          np.random.randint(0,3, size=[32,32]).astype(np.float32) ]),
     (eq1, 'eq1 x==x.max(-1)',           [np.random.random([32,32])]),
+    (ne0, 'x!=y',                       [np.random.random([77,99]), np.random.random([77,99])]),
     
     (or0, 'or0 x|y',                    [np.random.random([77,32]).view('uint32'), np.random.random([77,32]).view('uint32')]),
+    (and0,'and0 x|y',                   [np.random.random([77,32]).view('uint32'), np.random.random([77,32]).view('uint32')]),
 
     (exp0, 'exp(x)',                    [np.random.uniform(0,5,size=[32,32])]),
     #(log0, 'log(x)',                    [np.random.uniform(0,5,size=[32,32])]), #fails, why? numerical issues?
@@ -297,11 +309,19 @@ param_matrix = [
     (nextafter, 'nextafter(X,Y)',       [np.random.random([77,101])*2-1, np.random.random([77,101])]),
 ]
 
+for fname in ['cos', 'sin', 'tan', 'cosh', 'sinh', 'tanh', 
+              'acos', 'asin', 'atan', 'acosh', 'asinh', 'atanh',
+              'ceil', 'floor', 'sign']:
+    param_matrix += [ (getattr(jax.lax, fname), fname, [np.random.random([77,101])*2-1] ) ]
+
 
 TOLERANCES = {
     'erf(x)':            (1e-5, 1e-6),
     'erf_inv(x)':        (1e-5, 2e-3),      #high atol
     'sum(axis=012)':     (1e-4, 1e-8),      #reduce_sum2 
+    'sin':               (1e-5, 1e-6),
+    'sinh':              (1e-5, 1e-6),
+    'tan':               (1e-5, 1e-6),
 }
 
 
