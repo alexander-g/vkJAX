@@ -44,6 +44,7 @@ def dot_general2(x,y): return jax.lax.dot_general(x,y, (((0,), (1,)), ((), ())) 
 def relu0(x): return jax.nn.relu(x)
 
 def reduce_max0(x): return jnp.max(x, axis=0)
+def reduce_min0(x): return jnp.min(x, axis=0)
 def reduce_max1(x): return jnp.max(x, axis=1)
 def reduce_max2(x): return jnp.max(x, axis=[1,2,5])
 def reduce_sum0(x): return jnp.sum(x, axis=0)
@@ -52,6 +53,8 @@ def reduce_sum2(x): return jnp.sum(x, axis=[0,1,2])
 def no_reduce0(x):  return jnp.sum(x, axis=())  #fails, like reshape0
 def no_reduce1(x):  return jnp.sum(x+1, axis=())
 def reduce_prod0(x): return jnp.prod(x, axis=0)
+def argmax0(x):      return jnp.argmax(x, axis=0)
+def argmin0(x):      return jnp.argmin(x, axis=0)
 
 def gt0(x,y): return x>y
 def ge0(x,y): return x>=y
@@ -204,6 +207,7 @@ param_matrix = [
 
 
     (reduce_max0, 'max(axis=0)',        [np.random.random([32,32])]),
+    (reduce_min0, 'min(axis=0)',        [np.random.random([77,99])]),
     (reduce_max1, 'max(axis=1)',        [np.random.random([32,32])-1.0]),
     (reduce_max2, 'max(axis=125)',      [np.random.random([3,33,67,99,4,7])]),
     (reduce_sum0, 'sum(axis=0) 2D',     [np.random.random([32,32])]),
@@ -212,6 +216,8 @@ param_matrix = [
     (reduce_sum2, 'sum(axis=012)',      [np.random.random([65,77,22,7])]),
     #(no_reduce0, 'no_reduce0(axis=())', [np.random.random([32])]),
     (no_reduce1, 'no_reduce1(axis=())', [np.random.random([32])]),
+    (argmax0, 'argmax(axis=0)',         [np.random.random([99,77])]),
+    (argmin0, 'argmin(axis=0)',         [np.random.random([99,77])]),
     
     (reduce_prod0,'prod(axis=0)',       [np.random.random([32,32])+0.5]),
 

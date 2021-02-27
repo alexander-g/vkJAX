@@ -315,8 +315,11 @@ def reduce_op(self, equation:jax.core.JaxprEqn):
     return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
 
 reduce_max  = reduce_op
+reduce_min  = reduce_op
 reduce_sum  = reduce_op
 reduce_prod = reduce_op
+argmin      = reduce_op
+argmax      = reduce_op
 
 
 def select(self, equation:jax.core.JaxprEqn):
