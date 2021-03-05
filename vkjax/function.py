@@ -20,7 +20,8 @@ class Function:
     def _get_or_create_jaxpr_interpreter(self, args:tp.Tuple[tp.Any]) -> JaxprInterpreter:
         leaves,structure = jax.tree_flatten(args)
         args_shape       = tuple(jax.tree_map(np.shape, leaves))
-        shape_structure  = (args_shape, structure)
+        args_dtype       = tuple(jax.tree_map(lambda x: np.asarray(x).dtype, leaves))
+        shape_structure  = (args_shape, args_dtype, structure)
         if shape_structure not in self._jaxpr_interpreters:
             #new input shapes or structure, need to re-trace
             jaxpr, output_shapes = self.jaxpr_function(*args)

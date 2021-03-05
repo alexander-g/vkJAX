@@ -44,3 +44,18 @@ def test_shape_checking():
     assert len(vk_func._jaxpr_interpreters)==3
     assert isinstance(GLOBAL_VAR, jax.core.Tracer)
     GLOBAL_VAR = 0
+
+def test_dtype_checking():
+    global GLOBAL_VAR
+
+    vk_func = vkjax.Function(func0)
+
+    x  = np.arange(128).astype('uint32')
+    y0 = vk_func(x)
+    y1 = vk_func(x.astype('float32'))
+
+    assert np.allclose(y0, y1)
+    assert y0.dtype == np.uint32
+    assert y1.dtype == np.float32
+    assert len(vk_func._jaxpr_interpreters)==2
+
