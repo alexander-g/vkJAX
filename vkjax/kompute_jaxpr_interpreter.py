@@ -24,8 +24,7 @@ class JaxprInterpreter:
     def analyze_closed_jaxpr(self, jaxpr:jax.core.ClosedJaxpr):
         '''Starts the analysis of the top level jaxpr.
            Records operations into a kp.Sequence and creates required buffers.'''
-        self.sequence    = self.mgr.create_sequence("main")
-        self.sequence.begin()
+        self.sequence    = self.mgr.sequence()
         
         assert len(jaxpr.consts) == len(jaxpr.jaxpr.constvars)
         for constvar, constval in zip(jaxpr.jaxpr.constvars, jaxpr.consts):
@@ -35,11 +34,11 @@ class JaxprInterpreter:
         for op in self.all_ops:
             workgroup = op.workgroup or (len(op.tensors[0]),1,1)
             workgroup = (workgroup[0]//32,)+workgroup[1:]
-            self.sequence.record_algo_data(op.tensors, op.shader, workgroup)
+            algo      = self.mgr.algorithm(op.tensors, op.shader, workgroup)
+            self.sequence.record(kp.OpAlgoDispatch(algo))
     
         self.output_tensors = [self.get_or_create_buffer(var).tensor for var in jaxpr.jaxpr.outvars]
-        self.sequence.record_tensor_sync_local(self.output_tensors)
-        self.sequence.end()
+        self.sequence.record(kp.OpTensorSyncLocal(self.output_tensors))
     
     def analyze_jaxpr(self, jaxpr:jax.core.Jaxpr):
         '''Analyzes (possibly inner) jaxprs'''
@@ -69,7 +68,7 @@ class JaxprInterpreter:
         
         if len(input_tensors)>0:
             #transfer input data to device
-            self.mgr.eval_tensor_sync_device_def(input_tensors)
+            self.mgr.sequence().eval(kp.OpTensorSyncDevice(input_tensors))
 
         if not profile:
             self.sequence.eval()
@@ -86,7 +85,7 @@ class JaxprInterpreter:
             return output_values
         else:
             all_tensors = [b.tensor for b in self.buffers.values() if b is not None]
-            self.mgr.eval_tensor_sync_local_def(all_tensors)
+            self.mgr.sequence().eval(kp.OpTensorSyncLocal(all_tensors))
             all_arrays = [(var, buf.numpy() if buf is not None else None) for var,buf in self.buffers.items()]
             return output_values, dict(all_arrays)
 
@@ -112,9 +111,8 @@ class JaxprInterpreter:
             #kompute currently only supports float32 tensors
             initial_value = view_as_float32(initial_value)
 
-            tensor = kp.Tensor( initial_value )
-            self.mgr.eval_tensor_create_def([tensor])
-            self.mgr.eval_tensor_sync_device_def([tensor])
+            tensor = self.mgr.tensor(initial_value)
+            self.mgr.sequence().eval(kp.OpTensorSyncDevice([tensor]))
             self.buffers[varhash] = ops.Buffer(tensor, var.aval.dtype, var.aval.shape)
         return self.buffers[varhash]
     
@@ -125,14 +123,15 @@ class JaxprInterpreter:
             seq = self.mgr.create_sequence()
             seq.begin()
             workgroup = (len(op.tensors[0])//32,1,1)
-            seq.record_algo_data(op.tensors, op.shader, workgroup)
+            algo      = self.mgr.algorithm(op.tensors, op.shader, workgroup)
+            self.sequence.record(kp.OpAlgoDispatch(algo))
             seq.end()
 
             t0 = time.time()
             seq.eval()
             t1 = time.time()
             timings.append(t1-t0)
-        self.mgr.eval_tensor_sync_local_def(self.output_tensors)
+        self.mgr.sequence().eval(kp.OpTensorSyncLocal(self.output_tensors))
         return timings
 
 

@@ -12,7 +12,7 @@ class Buffer(tp.NamedTuple):
     shape  : tp.Tuple
 
     def numpy(self):
-        array = self.tensor.numpy()
+        array = self.tensor.data()
         #array = array.view(self.dtype)
         array  = view_or_convert_from_32bit(array, self.dtype)
         #the tensor might be larger than the shape it represents
