@@ -11,9 +11,10 @@ import jax
 
 
 class JaxprInterpreter:
-    def __init__(self, jaxpr:jax.core.ClosedJaxpr, static_argnums=()):
+    def __init__(self, jaxpr:jax.core.ClosedJaxpr, static_argnums:tp.Tuple[int]=(), profiling:bool=False):
         self.jaxpr          = jaxpr
         self.static_argnums = static_argnums
+        self.profiling      = profiling
         #dict mapping from jax.core.Var or int (for jax.core.Literal) to Buffer
         self.buffers   = {}
         device         = int(os.environ.get('VKJAX_DEVICE', 0))
@@ -24,13 +25,19 @@ class JaxprInterpreter:
     def analyze_closed_jaxpr(self, jaxpr:jax.core.ClosedJaxpr):
         '''Starts the analysis of the top level jaxpr.
            Records operations into a kp.Sequence and creates required buffers.'''
-        self.sequence    = self.mgr.sequence()
         
         assert len(jaxpr.consts) == len(jaxpr.jaxpr.constvars)
         for constvar, constval in zip(jaxpr.jaxpr.constvars, jaxpr.consts):
             self.get_or_create_buffer(constvar, initial_value=constval)
 
-        self.all_ops = self.analyze_jaxpr(jaxpr.jaxpr)
+        self.all_ops  = self.analyze_jaxpr(jaxpr.jaxpr)
+        n_timestamps  = len(self.all_ops)+2 if self.profiling else 0
+        self.sequence = self.mgr.sequence(total_timestamps=n_timestamps)
+
+        input_tensors = [self.get_or_create_buffer(var).tensor for var in self.jaxpr.jaxpr.invars]
+        if len(input_tensors) > 0:
+            self.sequence.record(kp.OpTensorSyncDevice(input_tensors))
+
         for op in self.all_ops:
             workgroup = op.workgroup or (len(op.tensors[0]),1,1)
             workgroup = (workgroup[0]//32,)+workgroup[1:]
@@ -56,7 +63,7 @@ class JaxprInterpreter:
         return all_ops
 
 
-    def run(self, *X, return_all=False, profile=False):
+    def run(self, *X, return_all=False):
         '''Executes a previously recorded sequence with actual data'''
         input_tensors = [self.get_or_create_buffer(var).tensor for var in self.jaxpr.jaxpr.invars]
         X             = jax.tree_leaves([x for i,x in enumerate(X) if i not in self.static_argnums])
@@ -64,22 +71,13 @@ class JaxprInterpreter:
         for input_tensor, x, var in zip(input_tensors, X, self.jaxpr.jaxpr.invars):
             #kompute always uses float32
             x = view_as_float32(np.asarray(x, dtype=var.aval.dtype))
-            input_tensor.set_data(maybe_pad(x))
-        
-        if len(input_tensors)>0:
-            #transfer input data to device
-            self.mgr.sequence().eval(kp.OpTensorSyncDevice(input_tensors))
+            input_tensor.data()[:] = maybe_pad(x)
 
-        if not profile:
-            self.sequence.eval()
-        else:
-            timings = self.profiling_eval()
-            return timings
+        self.sequence.eval()
         
         output_bufs    = [self.get_or_create_buffer(var) for var in self.jaxpr.jaxpr.outvars]
         output_values  = [buf.numpy() for buf in output_bufs]
         output_values  = tuple(output_values)
-
         
         if not return_all:
             return output_values
@@ -115,24 +113,12 @@ class JaxprInterpreter:
             self.mgr.sequence().eval(kp.OpTensorSyncDevice([tensor]))
             self.buffers[varhash] = ops.Buffer(tensor, var.aval.dtype, var.aval.shape)
         return self.buffers[varhash]
-    
 
-    def profiling_eval(self):
-        timings = []
-        for op in self.all_ops:
-            seq = self.mgr.create_sequence()
-            seq.begin()
-            workgroup = (len(op.tensors[0])//32,1,1)
-            algo      = self.mgr.algorithm(op.tensors, op.shader, workgroup)
-            self.sequence.record(kp.OpAlgoDispatch(algo))
-            seq.end()
-
-            t0 = time.time()
-            seq.eval()
-            t1 = time.time()
-            timings.append(t1-t0)
-        self.mgr.sequence().eval(kp.OpTensorSyncLocal(self.output_tensors))
-        return timings
+    def get_profiling_info(self):
+        timestamps = self.sequence.get_timestamps()
+        deltas     = np.diff(timestamps)
+        labels     = ['data2device']+[op.equation for op in self.all_ops]+['data2host']
+        return list(zip(labels, deltas))
 
 
 
