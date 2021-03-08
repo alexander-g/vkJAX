@@ -24,7 +24,7 @@ y = vkfun(
 
 ***
 ### Integration with [Elegy](https://github.com/poets-ai/elegy)
-`pip install elegy==0.4.1`
+`pip install elegy==0.7.1`
 ```python
 import elegy
 from vkjax.elegy import vkModel

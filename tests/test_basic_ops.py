@@ -366,7 +366,7 @@ def test_nextafter():
     ypred = vkfunc(x, -np.inf)
     assert np.all(x > ypred)
 
-    ypred = vkfunc(x, 0)
+    ypred = vkfunc(x, 0.0)
     assert np.all( np.sign(ypred-x) == np.sign(0-x) )
 
     x2 = np.random.random(x.shape)
