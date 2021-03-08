@@ -67,7 +67,8 @@ class JaxprInterpreter:
         '''Executes a previously recorded sequence with actual data'''
         input_tensors = [self.get_or_create_buffer(var).tensor for var in self.jaxpr.jaxpr.invars]
         X             = jax.tree_leaves([x for i,x in enumerate(X) if i not in self.static_argnums])
-        assert len(input_tensors) == len(X)
+        if len(input_tensors) != len(X):
+            raise TypeError(f'Expected {len(input_tensors)} input arguments, received {len(X)}')
         for input_tensor, x, var in zip(input_tensors, X, self.jaxpr.jaxpr.invars):
             #kompute always uses float32
             x = view_as_float32(np.asarray(x, dtype=var.aval.dtype))

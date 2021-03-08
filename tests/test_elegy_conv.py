@@ -29,12 +29,13 @@ def test_basic_inference0():
     module = Module0()
     model  = elegy.Model(module)
 
-    model.predict(x) #for initialization
-    jaxpr       = jax.make_jaxpr(model.call_pred_step, static_argnums=[1,3])(x, 'train', model.states, False)
+    model.predict(x, initialize=True) #for initialization
+    jaxpr       = jax.make_jaxpr(model.call_pred_step, static_argnums=[2,3])(x, model.states, False, False)
     print(jaxpr)
     
     vkmodel = vkjax.elegy.vkModel(module)
     vkmodel.states = model.states
+    vkmodel.initialized=True
 
     y     = vkmodel.predict(x)
     ytrue = model.predict(x)
@@ -56,9 +57,9 @@ def test_basic_training():
     model  = elegy.Model(module,
                          loss=elegy.losses.SparseCategoricalCrossentropy(from_logits=True),
                          optimizer=optax.sgd(0.1))
-    model.maybe_initialize("train", x,y)
+    model.init(x,y)
 
-    jaxpr       = jax.make_jaxpr(model.call_train_step, static_argnums=[2,6])(x, y, 'train', None, None, model.states, False)
+    jaxpr       = jax.make_jaxpr(model.call_train_step, static_argnums=[5,6])(x, y, None, None, model.states, False, False)
     print(jaxpr)
     
     vkmodel = vkjax.elegy.vkModel(module,
@@ -67,7 +68,7 @@ def test_basic_training():
     
     #hacky
     vkmodel.run_eagerly = True
-    vkmodel.maybe_initialize("train", x,y)
+    vkmodel.init(x,y)
     vkmodel.run_eagerly = False
     vkmodel.states = model.states
 
@@ -84,7 +85,7 @@ def test_basic_training():
     interpreter = list(vkmodel.call_train_step_jit._jaxpr_interpreters.values())[0]
     jaxpr       = interpreter.jaxpr
     _, envtrue  = eval_jaxpr(jaxpr.jaxpr, jaxpr.literals, x, y, None,None, model.states, return_env=True)
-    _, envpred  = interpreter.run(x, y, 'train', None,None, model.states, False, return_all=True)
+    _, envpred  = interpreter.run(x, y, None,None, model.states, False, False, return_all=True)
     #_, envpred = interpreter.run(x, y,  None,None, model.states, return_all=True)
     #XXX:atol higher than default
     assert np.all([safe_allclose(envpred.get(k, None), vtrue, atol=1e-6)  for k,vtrue in envtrue.items()])

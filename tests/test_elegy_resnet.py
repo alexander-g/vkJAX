@@ -20,11 +20,14 @@ def test_basic_predict0():
 
     r18     = elegy.nets.ResNet18(weights='imagenet')
 
-    model   = elegy.Model(r18)
+    model   = elegy.Model(r18, run_eagerly=True)
+    model.init(x)
     vkmodel = vkelegy.vkModel(r18)
+    vkmodel.states = model.states
+    vkmodel.initialized=True
     
     ypred   = vkmodel.predict(x)
-    ytrue   = vkmodel.predict(x)
+    ytrue   = model.predict(x)
 
-    assert np.allclose(ytrue, ypred)
+    assert np.allclose(ytrue, ypred, rtol=1e-4, atol=1e-5)
     
