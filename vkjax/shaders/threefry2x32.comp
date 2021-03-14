@@ -3,7 +3,7 @@
 
 #version 450
 
-layout (local_size_x = 32) in;
+layout (local_size_x = {{WORKGROUP_X}}) in;
 
 //kompute currently only supports float, will be static-casted to uint
 layout(set = 0, binding = 0) writeonly buffer bouta { uint out0[]; };

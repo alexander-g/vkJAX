@@ -3,11 +3,11 @@ import time
 import os
 
 from . import ops
+from . import shaders
 
 import kp
 import numpy as np
 import jax
-
 
 
 class JaxprInterpreter:
@@ -19,6 +19,8 @@ class JaxprInterpreter:
         self.buffers   = {}
         device         = int(os.environ.get('VKJAX_DEVICE', 0))
         self.mgr       = kp.Manager(device)
+        self.workgroup_size = get_maximum_workgroup_size(self.mgr)
+        shaders.DEFAULTS['WORKGROUP_X'] = self.workgroup_size
 
         self.analyze_closed_jaxpr(jaxpr)
     
@@ -40,7 +42,7 @@ class JaxprInterpreter:
 
         for op in self.all_ops:
             workgroup = op.workgroup or (len(op.tensors[0]),1,1)
-            workgroup = (workgroup[0]//32,)+workgroup[1:]
+            workgroup = (workgroup[0]//self.workgroup_size,)+workgroup[1:]
             algo      = self.mgr.algorithm(op.tensors, op.shader, workgroup)
             self.sequence.record(kp.OpAlgoDispatch(algo))
     
@@ -72,7 +74,7 @@ class JaxprInterpreter:
         for input_tensor, x, var in zip(input_tensors, X, self.jaxpr.jaxpr.invars):
             #kompute always uses float32
             x = view_as_float32(np.asarray(x, dtype=var.aval.dtype))
-            input_tensor.data()[:] = maybe_pad(x)
+            input_tensor.data()[:] = maybe_pad(x, pad_to=self.workgroup_size)
 
         self.sequence.eval()
         
@@ -106,7 +108,7 @@ class JaxprInterpreter:
                 assert initial_value.shape == var.aval.shape
 
             #pad to (currently) 32x4 bytes if needed
-            initial_value = maybe_pad(initial_value)
+            initial_value = maybe_pad(initial_value, pad_to=self.workgroup_size)
             #kompute currently only supports float32 tensors
             initial_value = view_as_float32(initial_value)
 
@@ -123,7 +125,7 @@ class JaxprInterpreter:
 
 
 
-def maybe_pad(x, pad_to=32):
+def maybe_pad(x, pad_to=1):
     x          = np.ravel(x)
     remainder  = x.size % pad_to
     if remainder != 0 or x.size==0:
@@ -141,3 +143,9 @@ def view_as_float32(x):
     if x.dtype.type in {np.int64}:
         x = x.astype('int32')
     return x.view('float32')
+
+
+def get_maximum_workgroup_size(mgr:kp.Manager):
+    devprops = mgr.get_device_properties()
+    return 128
+    return min(devprops['max_work_group_invocations'], devprops['max_work_group_size'][0])

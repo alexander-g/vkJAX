@@ -5,7 +5,7 @@ import vkjax, vkjax.elegy
 
 import jax, jax.numpy as jnp, numpy as np
 import elegy, optax
-from common import eval_jaxpr, safe_allclose
+from common import eval_jaxpr, safe_allclose, deep_debug
 
 
 
@@ -129,16 +129,15 @@ def test_basic_training():
 def test_basic_initialization():
     x = np.random.random([2,32,32,3]).astype(np.float32)
 
-    module   = MLP()
-    vkmodel  = vkjax.elegy.vkModel(module)
-
-    vkmodel.predict(x, initialize=True)
+    vkmodel  = vkjax.elegy.vkModel(MLP(), seed=1)
+    vkmodel.init(x)
     vkstates = vkmodel.states
 
-    module = MLP()
-    model  = elegy.Model(module)
-    model.predict(x, initialize=True)
+    model  = elegy.Model(MLP(), seed=1)
+    model.init(x)
     states = model.states
+
+    #deep_debug(vkmodel.call_init_step_jit, x)
 
     #NOTE: atol higher than default, limited by erf_inv
     assert np.all(jax.tree_multimap(lambda x,y: np.allclose(x,y, rtol=1e-5, atol=2e-3), jax.tree_leaves(states), jax.tree_leaves(vkstates) ))

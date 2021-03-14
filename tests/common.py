@@ -59,3 +59,16 @@ def safe_abs_max_error(x,y):
     if np.shape(x)==(0,) or np.shape(y)==(0,):
         return None
     return np.abs(x-y).max()
+
+def deep_debug(vk_fun, *args):
+  vki = list(vk_fun._jaxpr_interpreters.values())[0]
+  print(vki.jaxpr)
+  _, envpred = vki.run(*args, return_all=True)
+  _, envtrue = eval_jaxpr(vki.jaxpr.jaxpr, vki.jaxpr.literals, *args, return_env=True)
+
+  for k,vtrue in envtrue.items():
+      print(k, '\t', end='')
+      if str(k)=='_':
+          print(envpred.get(k,None), vtrue)
+      else:
+          print(safe_allclose(envpred.get(k, None), vtrue, atol=1e-6) )

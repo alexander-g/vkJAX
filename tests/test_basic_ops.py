@@ -146,6 +146,9 @@ shift_left             = jax.lax.shift_left
 shift_right_logical    = jax.lax.shift_right_logical
 shift_right_arithmetic = jax.lax.shift_right_arithmetic
 
+def shift_right_logical_1_32():
+    return jax.lax.shift_right_logical(1, 32)
+
 erf     = jax.lax.erf
 erf_inv = jax.lax.erf_inv
 rem     = jax.lax.rem
@@ -156,7 +159,7 @@ nextafter = jax.lax.nextafter
 
 
 param_matrix = [
-    (noop, 'noop',                      [5.0]),
+    #(noop, 'noop',                      [5.0]),
 
     (add0, 'add x+x scalar',            [5.0], ),
     (add0, 'add x+x array1d',           [np.random.random(32)] ),
@@ -296,8 +299,10 @@ param_matrix = [
     (shift_left,             'x<<1',    [np.arange(-777,+777), 1]),
     (shift_left,             'x<<y',    [np.arange(-777,+777), np.random.randint(0,20, size=777*2)]),
     (shift_right_logical,    'x>>1',    [np.arange(-777,+777), 1]),
+    (shift_right_logical_1_32,'1>>32',  []),
     (shift_right_logical, 'uint>>1',    [np.arange(-777,+777).view('uint32'), np.uint32(9)]),
     (shift_right_arithmetic, 'x>>1',    [np.arange(-777,+777), 1]),
+    (shift_right_arithmetic, 'uint32',  [np.arange(-777,+777).view(np.uint32), np.uint32(1)]),
 
     (erf,     'erf(x)',                 [np.random.random([111,283])*10-5]),
     (erf_inv, 'erf_inv(x)',             [np.random.random([111,283])*2 -1]),

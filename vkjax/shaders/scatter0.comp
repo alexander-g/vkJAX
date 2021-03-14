@@ -1,6 +1,6 @@
 #version 450
 
-layout (local_size_x = 32) in;
+layout (local_size_x = {{WORKGROUP_X}}) in;
 
 layout(set = 0, binding = 0)           buffer bout { float result[]; };
 layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };  //operand
