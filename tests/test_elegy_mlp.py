@@ -7,6 +7,8 @@ import jax, jax.numpy as jnp, numpy as np
 import elegy, optax
 from common import eval_jaxpr, safe_allclose, deep_debug
 
+from vkjax.kompute_jaxpr_interpreter import JaxprInterpreter
+
 
 
 class MLP(elegy.Module):
@@ -118,6 +120,9 @@ def test_basic_training():
     #deep inspection of inner variables
     interpreter = list(vkmodel.call_train_step_jit._jaxpr_interpreters.values())[0]
     jaxpr       = interpreter.jaxpr
+    #re-instantiate interpreter without memory buffer re-use
+    interpreter = JaxprInterpreter(jaxpr, interpreter.static_argnums, reuse_buffers=False)
+
     _, envtrue  = eval_jaxpr(jaxpr.jaxpr, jaxpr.literals, x, y, None,None, model.states, return_env=True)
     _, envpred  = interpreter.run(x, y, None,None, model.states, False, False, return_all=True)
     #XXX:atol higher than default

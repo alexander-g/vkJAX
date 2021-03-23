@@ -40,6 +40,7 @@ def dot1(x):   return jnp.dot(x, dot1_const)
 def dot_general0(x,y): return jax.lax.dot_general(x,y, (((0,), (0,)), ((), ())) )
 def dot_general1(x,y): return jax.lax.dot_general(x,y, (((1,), (1,)), ((), ())) )
 def dot_general2(x,y): return jax.lax.dot_general(x,y, (((0,), (1,)), ((), ())) )
+def reshape_dot(x, y): return x.reshape(-1,4) @ y
 
 def relu0(x): return jax.nn.relu(x)
 
@@ -199,6 +200,7 @@ param_matrix = [
     (dot_general0, 'dot axes=(0,0)',    [np.random.random([100,2]), np.random.random([100,32])] ),
     (dot_general1, 'dot axes=(1,1)',    [np.random.random([2,100]), np.random.random([32,100])] ),
     (dot_general2, 'dot axes=(0,1)',    [np.random.random([100,2]), np.random.random([32,100])] ),
+    (reshape_dot, 'reshape_dot',        [np.random.random([2,77,102]), np.random.random([4,4]) ] ),
 
     (relu0, 'relu0',                    [np.random.random([32,32,32])-0.5]),
     (max,   'max_float32',              [np.random.random([77,99,200]), np.random.random([77,99,200])]),

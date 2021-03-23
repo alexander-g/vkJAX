@@ -4,6 +4,10 @@ from jax import core
 from jax import lax
 from jax.util import safe_map
 
+from vkjax.kompute_jaxpr_interpreter import JaxprInterpreter
+
+
+
 #from https://jax.readthedocs.io/en/latest/notebooks/Writing_custom_interpreters_in_Jax.html, modified
 def eval_jaxpr(jaxpr, consts, *args, return_env=False):
   # Mapping from variable -> value
@@ -63,6 +67,9 @@ def safe_abs_max_error(x,y):
 def deep_debug(vk_fun, *args):
   vki = list(vk_fun._jaxpr_interpreters.values())[0]
   print(vki.jaxpr)
+  #re-instantiate interpreter without memory buffer re-use
+  vki = JaxprInterpreter(vki.jaxpr, vki.static_argnums, reuse_buffers=False)
+  
   _, envpred = vki.run(*args, return_all=True)
   _, envtrue = eval_jaxpr(vki.jaxpr.jaxpr, vki.jaxpr.literals, *args, return_env=True)
 
