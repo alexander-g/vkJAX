@@ -5,12 +5,14 @@ import jax, jax.numpy as jnp
 import typing as tp
 
 class Function:
-    def __init__(self, function:tp.Callable, static_argnums:tp.Tuple[int]=(), profiling:bool=False):
+    def __init__(self, function:tp.Callable, static_argnums:tp.Tuple[int]=(), profiling:bool=False, *args, **kwargs):
         self.jaxpr_function = jax.make_jaxpr(function, static_argnums, return_shape=True)
-        self.static_argnums = static_argnums
         self._jaxpr_interpreters = dict()
         self._output_shapes      = dict()
         self._profiling          = profiling
+        kwargs['profiling']      = profiling
+        kwargs['static_argnums'] = static_argnums
+        self._interpreter_args   = (args, kwargs)
     
     def __call__(self, *args:tp.Any, **kwargs:tp.Any) -> tp.Any:
         jaxpr_interpreter, output_shapes = self._get_or_create_jaxpr_interpreter(args)
@@ -29,7 +31,8 @@ class Function:
         if shape_structure not in self._jaxpr_interpreters:
             #new input shapes or structure, need to re-trace
             jaxpr, output_shapes = self.jaxpr_function(*args)
-            self._jaxpr_interpreters[shape_structure] = JaxprInterpreter(jaxpr, self.static_argnums, self._profiling)
+            args,kwargs          = self._interpreter_args
+            self._jaxpr_interpreters[shape_structure] = JaxprInterpreter(jaxpr, *args, **kwargs)
             self._output_shapes[shape_structure]      = output_shapes
         return self._jaxpr_interpreters[shape_structure], self._output_shapes[shape_structure]
 
@@ -40,5 +43,5 @@ def _restore_shapes(x, targetshapes):
     return x
 
 
-def wrap(function:tp.Callable, static_argnums:tp.Tuple[int]=()):
-    return Function(function, static_argnums)
+def wrap(function:tp.Callable, *args, **kwargs):
+    return Function(function, *args, **kwargs)

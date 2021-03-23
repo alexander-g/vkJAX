@@ -40,6 +40,7 @@ def dot1(x):   return jnp.dot(x, dot1_const)
 def dot_general0(x,y): return jax.lax.dot_general(x,y, (((0,), (0,)), ((), ())) )
 def dot_general1(x,y): return jax.lax.dot_general(x,y, (((1,), (1,)), ((), ())) )
 def dot_general2(x,y): return jax.lax.dot_general(x,y, (((0,), (1,)), ((), ())) )
+def reshape_dot(x, y): return x.reshape(-1,4) @ y
 
 def relu0(x): return jax.nn.relu(x)
 
@@ -146,6 +147,9 @@ shift_left             = jax.lax.shift_left
 shift_right_logical    = jax.lax.shift_right_logical
 shift_right_arithmetic = jax.lax.shift_right_arithmetic
 
+def shift_right_logical_1_32():
+    return jax.lax.shift_right_logical(1, 32)
+
 erf     = jax.lax.erf
 erf_inv = jax.lax.erf_inv
 rem     = jax.lax.rem
@@ -156,7 +160,7 @@ nextafter = jax.lax.nextafter
 
 
 param_matrix = [
-    (noop, 'noop',                      [5.0]),
+    #(noop, 'noop',                      [5.0]),
 
     (add0, 'add x+x scalar',            [5.0], ),
     (add0, 'add x+x array1d',           [np.random.random(32)] ),
@@ -196,6 +200,7 @@ param_matrix = [
     (dot_general0, 'dot axes=(0,0)',    [np.random.random([100,2]), np.random.random([100,32])] ),
     (dot_general1, 'dot axes=(1,1)',    [np.random.random([2,100]), np.random.random([32,100])] ),
     (dot_general2, 'dot axes=(0,1)',    [np.random.random([100,2]), np.random.random([32,100])] ),
+    (reshape_dot, 'reshape_dot',        [np.random.random([2,77,102]), np.random.random([4,4]) ] ),
 
     (relu0, 'relu0',                    [np.random.random([32,32,32])-0.5]),
     (max,   'max_float32',              [np.random.random([77,99,200]), np.random.random([77,99,200])]),
@@ -271,7 +276,8 @@ param_matrix = [
     (rev0,       'rev0 dims=1,2',       [np.random.random([33,77,88,11])]),
 
     (integer_pow0, 'x**2',              [np.random.random([77,9,35])]),
-    (integer_pow1, 'x**5',              [np.random.random([77,9,35])]),
+    (integer_pow1, 'x**5',              [np.random.random([77,9,35])*2-1]),
+    (integer_pow1, 'int**5',            [np.random.randint(-1000, 1000, size=[77,9,35])]),
     (pow0, 'x**scalar',                 [np.random.random([77,9,35]), np.random.random()]),
 
     (slice0, '1-D slice(x, [2],[5])',   [np.random.random([99])]),
@@ -296,8 +302,10 @@ param_matrix = [
     (shift_left,             'x<<1',    [np.arange(-777,+777), 1]),
     (shift_left,             'x<<y',    [np.arange(-777,+777), np.random.randint(0,20, size=777*2)]),
     (shift_right_logical,    'x>>1',    [np.arange(-777,+777), 1]),
+    (shift_right_logical_1_32,'1>>32',  []),
     (shift_right_logical, 'uint>>1',    [np.arange(-777,+777).view('uint32'), np.uint32(9)]),
     (shift_right_arithmetic, 'x>>1',    [np.arange(-777,+777), 1]),
+    (shift_right_arithmetic, 'uint32',  [np.arange(-777,+777).view(np.uint32), np.uint32(1)]),
 
     (erf,     'erf(x)',                 [np.random.random([111,283])*10-5]),
     (erf_inv, 'erf_inv(x)',             [np.random.random([111,283])*2 -1]),

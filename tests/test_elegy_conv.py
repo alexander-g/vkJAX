@@ -2,6 +2,7 @@ import os
 os.environ['CUDA_VISIBLE_DEVICES']=''
 
 import vkjax, vkjax.elegy
+from vkjax.kompute_jaxpr_interpreter import JaxprInterpreter
 
 import jax, jax.numpy as jnp, numpy as np
 import elegy, optax
@@ -47,7 +48,6 @@ def test_basic_inference0():
 
 
 
-
 def test_basic_training():
     B = 8
     x = np.random.random([B,32,32,3]).astype(np.float32)
@@ -84,11 +84,14 @@ def test_basic_training():
     #deep inspection of inner variables
     interpreter = list(vkmodel.call_train_step_jit._jaxpr_interpreters.values())[0]
     jaxpr       = interpreter.jaxpr
+    #re-instantiate interpreter without memory buffer re-use
+    interpreter = JaxprInterpreter(jaxpr, interpreter.static_argnums, reuse_buffers=False)
+
     _, envtrue  = eval_jaxpr(jaxpr.jaxpr, jaxpr.literals, x, y, None,None, model.states, return_env=True)
     _, envpred  = interpreter.run(x, y, None,None, model.states, False, False, return_all=True)
-    #_, envpred = interpreter.run(x, y,  None,None, model.states, return_all=True)
+    
     #XXX:atol higher than default
-    assert np.all([safe_allclose(envpred.get(k, None), vtrue, atol=1e-6)  for k,vtrue in envtrue.items()])
+    assert np.all([safe_allclose(envpred.get(k, None), vtrue, atol=5e-5)  for k,vtrue in envtrue.items()])
 
 
 

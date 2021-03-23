@@ -3,16 +3,22 @@ import os
 import vkjax
 import pyshaderc
 
+import subprocess
+
 VKJAX_ROOT  = os.path.dirname(vkjax.__file__)
 SHADERS_DIR = os.path.join(VKJAX_ROOT, 'shaders')
-COMMON_GLSL = open(os.path.join(VKJAX_ROOT, 'shaders', 'common.glsl')).read()
+
+DEFAULTS = dict(
+    COMMON_GLSL = open(os.path.join(VKJAX_ROOT, 'shaders', 'common.glsl')).read(),
+    WORKGROUP_X = 32,
+)
 
 def get_shader(name:str, **constants):
     shader_file = os.path.join(SHADERS_DIR, f'{name}.comp')
     if not os.path.exists(shader_file):
         raise NotImplementedError(name)
     shader_str = open(shader_file).read()
-    shader_str = preformat(shader_str).format(COMMON_GLSL=COMMON_GLSL, **constants) 
+    shader_str = preformat(shader_str).format(**DEFAULTS, **constants) 
 
     glsl_bytes = bytes(shader_str, encoding='utf8')
     try:

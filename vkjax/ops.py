@@ -1,32 +1,11 @@
 import typing as tp
 
 from . import shaders
+from .buffers import Buffer
 
 import kp
 import numpy as np
 import jax
-
-class Buffer(tp.NamedTuple):
-    tensor : kp.Tensor
-    dtype  : np.dtype
-    shape  : tp.Tuple
-
-    def numpy(self):
-        array = self.tensor.data()
-        #array = array.view(self.dtype)
-        array  = view_or_convert_from_32bit(array, self.dtype)
-        #the tensor might be larger than the shape it represents
-        n     = int(np.prod(self.shape))
-        array = array[:n].reshape(self.shape)
-        return array
-
-
-def view_or_convert_from_32bit(x, dtype):
-    if dtype == np.bool:
-        #GLSL booleans are 32-bit, cannot simply .view()
-        return x>0
-    else:
-        return x.view(dtype)
 
 
 
@@ -47,7 +26,8 @@ def np_to_glsl_dtypes(np_dtypes):
 
 
 class Op(tp.NamedTuple):
-    tensors:  tp.List[kp.Tensor]
+    #tensors:  tp.List[kp.Tensor]
+    buffers:  tp.List[Buffer]
     shader:   bytes
     equation: jax.core.JaxprEqn
     workgroup:tp.Tuple[int] = None
@@ -56,9 +36,9 @@ class Op(tp.NamedTuple):
     def construct(cls, buffers:tp.List[Buffer], shader_name:str, equation:jax.core.JaxprEqn, **consts):
         dtype_consts = np_to_glsl_dtypes([b.dtype.type for b in buffers])
         shader_bytes = shaders.get_shader(shader_name, **consts, **dtype_consts)
-        tensors      = [b.tensor for b in buffers]
+        #tensors      = [b.tensor for b in buffers]
         workgroup    = None
-        return Op(tensors, shader_bytes, equation, workgroup)
+        return Op(buffers, shader_bytes, equation, workgroup)
 
 
 def to_shape_const_str(shape:tp.Iterable):
@@ -69,12 +49,28 @@ def to_shape_const_str(shape:tp.Iterable):
 
 
 
+def analyze_jaxpr(bufferpool, jaxpr:jax.core.Jaxpr):
+    '''Analyzes (possibly inner) jaxprs'''
+    all_ops = []
+    for eq in jaxpr.eqns:
+        if all([str(v)=='_' for v in eq.outvars]):
+            #seems like a redundant operation
+            continue
+        opname = eq.primitive.name.replace('-','_')
+        method = globals().get(opname, None)
+        if method is None:
+            raise NotImplementedError(eq)
+        method_ops = method(bufferpool, eq)
+        all_ops   += method_ops
+    return all_ops
+
+
 ###############################################################
 
 
 
 
-def element_wise_binary_op(self, equation:jax.core.JaxprEqn):
+def element_wise_binary_op(bufferpool, equation:jax.core.JaxprEqn):
     assert equation.params=={}
     assert len(equation.invars)==2
     assert len(equation.outvars)==1
@@ -84,13 +80,13 @@ def element_wise_binary_op(self, equation:jax.core.JaxprEqn):
     inbufs      = []
     bcast_ops   = []
     for invar in equation.invars:
-        buf = self.get_or_create_buffer(invar)
+        buf = bufferpool.get_buffer(invar)
         if invar.aval.shape != outvar.aval.shape:
-            buf,bcast_op = broadcast(self, buf, outvar, invar.aval.dtype)
+            buf,bcast_op = broadcast(bufferpool, buf, outvar, invar.aval.dtype)
             bcast_ops.append(bcast_op)
         inbufs.append(buf)
     
-    outbuf = self.get_or_create_buffer(outvar)
+    outbuf = bufferpool.get_buffer(outvar, increment_op_counter=True)
     return bcast_ops+[Op.construct(inbufs+[outbuf], equation.primitive.name, equation)]
 
 add = element_wise_binary_op
@@ -120,7 +116,7 @@ locals()['and'] = element_wise_binary_op
 
 
 
-def element_wise_unary_op(self, equation:jax.core.JaxprEqn):
+def element_wise_unary_op(bufferpool, equation:jax.core.JaxprEqn):
     assert equation.params=={}
     assert len(equation.invars)==1
     assert len(equation.outvars)==1
@@ -131,8 +127,8 @@ def element_wise_unary_op(self, equation:jax.core.JaxprEqn):
     assert outvar.aval.shape == invar.aval.shape
     assert outvar.aval.dtype == invar.aval.dtype == np.float32
 
-    inbuf  = self.get_or_create_buffer(invar)
-    outbuf = self.get_or_create_buffer(outvar)
+    inbuf  = bufferpool.get_buffer(invar)
+    outbuf = bufferpool.get_buffer(outvar, increment_op_counter=True)
     return [Op.construct([outbuf, inbuf], equation.primitive.name, equation)]
 
 exp = element_wise_unary_op
@@ -144,9 +140,9 @@ erf     = element_wise_unary_op
 erf_inv = element_wise_unary_op
 
 
-def templated_unary_op(self, equation:jax.core.JaxprEqn):
-    inbuf  = self.get_or_create_buffer(equation.invars[0])
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
+def templated_unary_op(bufferpool, equation:jax.core.JaxprEqn):
+    inbuf  = bufferpool.get_buffer(equation.invars[0])
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
     assert outbuf.shape == inbuf.shape
     assert outbuf.dtype == inbuf.dtype == np.float32
 
@@ -161,7 +157,7 @@ for fname in ['cos', 'sin', 'tan', 'cosh', 'sinh', 'tanh',
 
 
 
-def broadcast(self, buf:Buffer, newvar:jax.core.Var, dtype:np.dtype):
+def broadcast(bufferpool, buf:Buffer, newvar:jax.core.Var, dtype:np.dtype):
     #newvar has the correct shape to broadcast to, but maybe a wrong dtype
     aval   = jax.core.ShapedArray(newvar.aval.shape, dtype)
     newvar = jax.core.Var(newvar.count, suffix='_broadcast', aval=aval)
@@ -173,7 +169,7 @@ def broadcast(self, buf:Buffer, newvar:jax.core.Var, dtype:np.dtype):
         shape_in[-i-1] = olddim
     
     #FIXME: this should not be a shader call
-    outbuf = self.get_or_create_buffer(newvar)
+    outbuf = bufferpool.get_buffer(newvar)
     inbuf  = buf
 
     shader_consts = dict()
@@ -188,24 +184,24 @@ def broadcast(self, buf:Buffer, newvar:jax.core.Var, dtype:np.dtype):
     return outbuf, Op.construct([outbuf, inbuf], 'broadcast_in_dim', 'broadcast', **shader_consts)
 
 
-def broadcast_in_dim(self, equation:jax.core.JaxprEqn):
+def broadcast_in_dim(bufferpool, equation:jax.core.JaxprEqn):
     #assert broadcast_dimensions are sorted
     assert np.all(np.diff(equation.params['broadcast_dimensions'])>0)
     invar  = equation.invars[0]
     outvar = equation.outvars[0]
 
-    inbuf    = self.get_or_create_buffer(invar)
+    inbuf    = bufferpool.get_buffer(invar)
     if np.prod(inbuf.shape) == np.prod(outvar.aval.shape):
         #same size, just create new buffer with same tensor but new shape
-        outbuf   = Buffer(inbuf.tensor, inbuf.dtype, outvar.aval.shape)
-        self.buffers[outvar] = outbuf
+        outbuf = inbuf.view(outvar.aval.dtype, outvar.aval.shape)
+        bufferpool.set_buffer(outvar, outbuf)
         return []
     else:
         #size changed, need a shader call (currently)
         #FIXME: shouldn't be a shader call
         #FIXME: code duplication with broadcast()
 
-        outbuf    = self.get_or_create_buffer(outvar)
+        outbuf    = bufferpool.get_buffer(outvar, increment_op_counter=True)
 
         shader_consts = dict()
         inshape  = (1,)+inbuf.shape
@@ -219,7 +215,7 @@ def broadcast_in_dim(self, equation:jax.core.JaxprEqn):
         return [Op.construct([outbuf, inbuf], 'broadcast_in_dim', equation, **shader_consts)]
 
 
-def xla_call(self, equation:jax.core.JaxprEqn):
+def xla_call(bufferpool, equation:jax.core.JaxprEqn):
     assert equation.params['device'] == None
     assert equation.params['backend'] == None
 
@@ -231,9 +227,9 @@ def xla_call(self, equation:jax.core.JaxprEqn):
             #ignored
             continue
         #connect call parameters to the function-local variables
-        self.buffers[jaxpr_var] = self.get_or_create_buffer(eq_var)
+        bufferpool.set_buffer(jaxpr_var, bufferpool.get_buffer(eq_var))
     
-    all_ops = self.analyze_jaxpr(jaxpr)
+    all_ops = analyze_jaxpr(bufferpool, jaxpr)
     
     for eq_var, jaxpr_var in zip(equation.outvars, jaxpr.outvars):
         if str(eq_var)=='_':
@@ -241,13 +237,13 @@ def xla_call(self, equation:jax.core.JaxprEqn):
             continue
         if str(jaxpr_var)=='*':
             #strange, but can happen that * gets assigned a variable
-            self.buffers[eq_var] = None
+            bufferpool.set_buffer(eq_var, None)
             continue
         #connect the function-local variables ot the output variables
-        self.buffers[eq_var] = self.get_or_create_buffer(jaxpr_var)
+        bufferpool.set_buffer(eq_var, bufferpool.get_buffer(jaxpr_var))
     return all_ops
 
-def custom_jvp_call_jaxpr(self, equation:jax.core.JaxprEqn):
+def custom_jvp_call_jaxpr(bufferpool, equation:jax.core.JaxprEqn):
     assert equation.params['num_consts'] == 0
     
     jaxpr = equation.params['fun_jaxpr'].jaxpr
@@ -255,16 +251,16 @@ def custom_jvp_call_jaxpr(self, equation:jax.core.JaxprEqn):
     assert len(equation.invars) == len(jaxpr.invars)
     assert len(equation.outvars) == len(jaxpr.outvars)
     for eq_var, jaxpr_var in zip(equation.invars, jaxpr.invars):
-        self.buffers[jaxpr_var] = self.get_or_create_buffer(eq_var)
+        bufferpool.set_buffer(jaxpr_var, bufferpool.get_buffer(eq_var))
     
-    all_ops = self.analyze_jaxpr(jaxpr)
+    all_ops = analyze_jaxpr(bufferpool, jaxpr)
     
     for eq_var, jaxpr_var in zip(equation.outvars, jaxpr.outvars):
-        self.buffers[eq_var] = self.buffers[jaxpr_var]
+        bufferpool.set_buffer(eq_var, bufferpool.get_buffer(jaxpr_var))
     return all_ops
 
 
-def reshape(self, equation:jax.core.JaxprEqn):
+def reshape(bufferpool, equation:jax.core.JaxprEqn):
     assert equation.params['dimensions'] == None
     assert len(equation.outvars) == 1
     assert len(equation.invars) == 1
@@ -273,12 +269,12 @@ def reshape(self, equation:jax.core.JaxprEqn):
     assert invar.aval.dtype == outvar.aval.dtype
 
     #no real operation needed, just replace the shape in the buffer
-    buffer = self.get_or_create_buffer(invar)
-    newbuffer = Buffer(buffer.tensor, buffer.dtype, outvar.aval.shape)
-    self.buffers[outvar] = newbuffer
+    buffer = bufferpool.get_buffer(invar)
+    outbuf = buffer.view(outvar.aval.dtype, outvar.aval.shape)
+    bufferpool.set_buffer(outvar, outbuf)
     return []
 
-def dot_general(self, equation:jax.core.JaxprEqn):
+def dot_general(bufferpool, equation:jax.core.JaxprEqn):
     assert equation.params['precision'] == None
     dim_numbers = equation.params['dimension_numbers']
     assert dim_numbers[1] == ((),())
@@ -288,33 +284,36 @@ def dot_general(self, equation:jax.core.JaxprEqn):
     assert len(equation.outvars) == 1
     assert all([v.aval.dtype==np.float32 for v in equation.invars+equation.outvars])
 
-    inbufs  = [self.get_or_create_buffer(v) for v in equation.invars]
-    outbuf  = self.get_or_create_buffer(equation.outvars[0])
-    N, M    = outbuf.shape[0],  outbuf.shape[1]
-    C       = inbufs[0].shape[dim_numbers[0][0][0]]
-    cdim_a  = dim_numbers[0][0][0]
-    cdim_b  = dim_numbers[0][1][0]
+    inbufs  = [bufferpool.get_buffer(v) for v in equation.invars]
+    outbuf  = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
-    shader_bytes = shaders.get_shader(equation.primitive, N=N, C=C, M=M, CDIM_A=cdim_a, CDIM_B=cdim_b)
-    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
+    shader_consts = dict()
+    shader_consts['N'] = outbuf.shape[0]
+    shader_consts['M'] = outbuf.shape[1]
+    shader_consts['C'] = inbufs[0].shape[dim_numbers[0][0][0]]
+    shader_consts['CDIM_A'] = dim_numbers[0][0][0]
+    shader_consts['CDIM_B'] = dim_numbers[0][1][0]
 
-def iota(self, equation:jax.core.JaxprEqn):
+    return [Op.construct([outbuf]+inbufs, equation.primitive.name, equation, **shader_consts)]
+
+
+def iota(bufferpool, equation:jax.core.JaxprEqn):
     assert equation.params['dimension'] == 0
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
     return [Op.construct([outbuf], 'iota', equation)]
 
-def reduce_op(self, equation:jax.core.JaxprEqn):
+def reduce_op(bufferpool, equation:jax.core.JaxprEqn):
     axes  = equation.params['axes']
     if axes==():
         #strange but can happen -> noop
-        return noop(self, equation)
+        return noop(bufferpool, equation)
     outvar = equation.outvars[0]
     invar  = equation.invars[0]
     if len(invar.aval.shape)==1:
         invar.aval.shape = invar.aval.shape+(1,)
 
-    inbuf  = self.get_or_create_buffer(invar)
-    outbuf = self.get_or_create_buffer(outvar)
+    inbuf  = bufferpool.get_buffer(invar)
+    outbuf = bufferpool.get_buffer(outvar, increment_op_counter=True)
     
     reduced_shape = [s if i not in axes else 1 for i,s  in enumerate(inbuf.shape)]
     reduce_dims   = [s if i     in axes else 1 for i,s  in enumerate(inbuf.shape)]
@@ -326,8 +325,7 @@ def reduce_op(self, equation:jax.core.JaxprEqn):
     shader_consts['REDUCE_DIMS'] = ','.join(map(str, reduce_dims))
     shader_consts['REDUCE_SIZE'] = np.prod(reduce_dims)
 
-    shader_bytes = shaders.get_shader(equation.primitive.name, **shader_consts)
-    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+    return [Op.construct([outbuf, inbuf], equation.primitive.name, equation, **shader_consts)]
 
 reduce_max  = reduce_op
 reduce_min  = reduce_op
@@ -337,18 +335,18 @@ argmin      = reduce_op
 argmax      = reduce_op
 
 
-def select(self, equation:jax.core.JaxprEqn):
+def select(bufferpool, equation:jax.core.JaxprEqn):
     assert equation.invars[0].aval.shape \
         == equation.invars[1].aval.shape \
         == equation.invars[2].aval.shape \
         == equation.outvars[0].aval.shape
     
-    inbufs = [self.get_or_create_buffer(var) for var in equation.invars]
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
+    inbufs = [bufferpool.get_buffer(var) for var in equation.invars]
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
     return [Op.construct([outbuf]+inbufs, 'select', equation)]
 
-def concatenate(self, equation:jax.core.JaxprEqn):
+def concatenate(bufferpool, equation:jax.core.JaxprEqn):
     #currently only support for concatenation of 2 parameters
     assert len(equation.invars)==2
     #currently only supporting the last axis
@@ -359,8 +357,8 @@ def concatenate(self, equation:jax.core.JaxprEqn):
         == equation.invars[0].aval.shape[:-1]  \
         == equation.invars[1].aval.shape[:-1]
 
-    inbufs = [self.get_or_create_buffer(var) for var in equation.invars]
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
+    inbufs = [bufferpool.get_buffer(var) for var in equation.invars]
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
     shader_consts = dict()
     shader_consts['COLS_A']   = inbufs[0].shape[-1]
@@ -371,10 +369,10 @@ def concatenate(self, equation:jax.core.JaxprEqn):
     return [Op.construct([outbuf]+inbufs, 'concatenate', equation, **shader_consts)]
 
 
-def gather(self, equation:jax.core.JaxprEqn):
+def gather(bufferpool, equation:jax.core.JaxprEqn):
     params = equation.params
-    inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
+    inbufs = [bufferpool.get_buffer(v) for v in equation.invars]
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
     shader_consts = dict()
     shader_consts['N_A']             = len(inbufs[0].shape)
@@ -403,54 +401,55 @@ def gather(self, equation:jax.core.JaxprEqn):
     return [Op.construct([outbuf]+inbufs, 'gather', equation, **shader_consts)]
 
 
-def scatter_add(self, equation:jax.core.JaxprEqn):
+def scatter_add(bufferpool, equation:jax.core.JaxprEqn):
     params = equation.params
     d0 = jax.lax.ScatterDimensionNumbers(update_window_dims=(), inserted_window_dims=(0,1), scatter_dims_to_operand_dims=(0,1))
     d1 = jax.lax.ScatterDimensionNumbers(update_window_dims=(0,), inserted_window_dims=(1,), scatter_dims_to_operand_dims=(1,))
     if params['dimension_numbers'] == d0:
         #equivalent to x[i[0], i[2]] += u[i[0]],  with x.shape=(B,N), i.shape=(B,1,2), u.shape=(B,)
-        inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
-        outbuf = self.get_or_create_buffer(equation.outvars[0])
+        inbufs = [bufferpool.get_buffer(v) for v in equation.invars]
+        outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
         assert len(inbufs[0].shape)==2
         assert inbufs[0].shape == outbuf.shape
         assert inbufs[1].shape[1:] == (1,2)
         assert inbufs[2].shape[0] == inbufs[0].shape[0]
 
-        shader_bytes = shaders.get_shader('scatter0', N=inbufs[0].shape[0], M=inbufs[0].shape[1])
-        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
+        shader_consts = dict(N=inbufs[0].shape[0], M=inbufs[0].shape[1])
+        return [Op.construct([outbuf]+inbufs, 'scatter0', equation, **shader_consts)]
+
     elif params['dimension_numbers'] == d1:
         #equivalent to x[:,i]+=u with x.shape=(B,N), i.shape=(1,), u.shape=(B,)
-        inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
-        outbuf = self.get_or_create_buffer(equation.outvars[0])
+        inbufs = [bufferpool.get_buffer(v) for v in equation.invars]
+        outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
         assert len(inbufs[0].shape)==2
         assert inbufs[0].shape == outbuf.shape
         assert inbufs[1].shape==(1,)
 
-        shader_bytes = shaders.get_shader('scatter1', N=inbufs[0].shape[0], M=inbufs[0].shape[1])
-        return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
+        shader_consts = dict(N=inbufs[0].shape[0], M=inbufs[0].shape[1])
+        return [Op.construct([outbuf]+inbufs, 'scatter1', equation, **shader_consts)]
     else:
         raise NotImplementedError(equation)
 
-def transpose(self, equation:jax.core.JaxprEqn):
+def transpose(bufferpool, equation:jax.core.JaxprEqn):
     assert equation.params['permutation'] == (1,0)
 
-    inbuf  = self.get_or_create_buffer(equation.invars[0])
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
+    inbuf  = bufferpool.get_buffer(equation.invars[0])
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
-    shader_bytes = shaders.get_shader(equation.primitive.name, N=inbuf.shape[0], M=inbuf.shape[1])
-    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+    shader_consts = dict(N=inbuf.shape[0], M=inbuf.shape[1])
+    return [Op.construct([outbuf, inbuf], equation.primitive.name, equation, **shader_consts)]
 
 
-def noop(self, equation:jax.core.JaxprEqn):
+def noop(bufferpool, equation:jax.core.JaxprEqn):
     #does not perform any operations
     #simply re-uses the input buffer
     assert len(equation.invars)==len(equation.outvars)==1
-    inbuf  = self.get_or_create_buffer(equation.invars[0])
+    inbuf  = bufferpool.get_buffer(equation.invars[0])
     outvar = equation.outvars[0]
-    outbuf = Buffer(inbuf.tensor, outvar.aval.dtype, outvar.aval.shape)
-    self.buffers[equation.outvars[0]] = outbuf
+    outbuf = inbuf.view(outvar.aval.dtype, outvar.aval.shape)
+    bufferpool.set_buffer(outvar, outbuf)
     return []
 
 #not relevant for us i think
@@ -461,7 +460,7 @@ bitcast_convert_type = noop
 
 
 
-def conv_general_dilated(self, equation:jax.core.JaxprEqn):
+def conv_general_dilated(bufferpool, equation:jax.core.JaxprEqn):
     params = equation.params
     assert params['precision']           == None
     assert params['batch_group_count']   == 1
@@ -482,17 +481,16 @@ def conv_general_dilated(self, equation:jax.core.JaxprEqn):
     shader_consts['DILATE_RHS']  = ','.join(map(str, params["rhs_dilation"]))
     shader_consts['DILATE_LHS']  = ','.join(map(str, params["lhs_dilation"]))
     
-    inbufs = [self.get_or_create_buffer(v) for v in equation.invars]
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
+    inbufs = [bufferpool.get_buffer(v) for v in equation.invars]
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
-    shader_bytes = shaders.get_shader('conv2d', **shader_consts)
-    return [Op([b.tensor for b in [outbuf]+inbufs], shader_bytes, equation)]
-
+    return [Op.construct([outbuf]+inbufs, 'conv2d', equation, **shader_consts)]
 
 
-def rev(self, equation:jax.core.JaxprEqn):
-    inbuf  = self.get_or_create_buffer(equation.invars[0])
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
+
+def rev(bufferpool, equation:jax.core.JaxprEqn):
+    inbuf  = bufferpool.get_buffer(equation.invars[0])
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
     reversed_dims = [int(i in equation.params['dimensions']) for i in range(len(inbuf.shape))]
 
@@ -501,11 +499,10 @@ def rev(self, equation:jax.core.JaxprEqn):
     shader_consts['SHAPE']         = inbuf.shape
     shader_consts['REVERSED_DIMS'] = tuple(reversed_dims)
 
-    shader_bytes = shaders.get_shader('rev', **shader_consts)
-    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+    return [Op.construct([outbuf, inbuf], 'rev', equation, **shader_consts)]
 
 
-def reduce_window_max(self, equation:jax.core.JaxprEqn):
+def reduce_window_max(bufferpool, equation:jax.core.JaxprEqn):
     #only 2D implemented
     assert len(equation.outvars[0].aval.shape) == 4, NotImplemented
     params = equation.params
@@ -521,24 +518,22 @@ def reduce_window_max(self, equation:jax.core.JaxprEqn):
     shader_consts['WINDOW']      = params["window_dimensions"]
 
 
-    inbuf  = self.get_or_create_buffer(equation.invars[0])
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
+    inbuf  = bufferpool.get_buffer(equation.invars[0])
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
-    shader_bytes = shaders.get_shader('reduce_window_max_2d', **shader_consts)
-    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
-
-
-def integer_pow(self, equation:jax.core.JaxprEqn):
-    inbuf  = self.get_or_create_buffer(equation.invars[0])
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
-
-    shader_bytes = shaders.get_shader('integer_pow', Y=equation.params['y'])
-    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+    return [Op.construct([outbuf, inbuf], 'reduce_window_max_2d', equation, **shader_consts)]
 
 
-def slice(self, equation:jax.core.JaxprEqn):
-    inbuf  = self.get_or_create_buffer(equation.invars[0])
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
+def integer_pow(bufferpool, equation:jax.core.JaxprEqn):
+    inbuf  = bufferpool.get_buffer(equation.invars[0])
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
+
+    return [Op.construct([outbuf, inbuf], 'integer_pow', equation, Y=equation.params['y'])]
+
+
+def slice(bufferpool, equation:jax.core.JaxprEqn):
+    inbuf  = bufferpool.get_buffer(equation.invars[0])
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
     shader_consts = dict()
     N                          = len(inbuf.shape)
@@ -549,13 +544,12 @@ def slice(self, equation:jax.core.JaxprEqn):
     shader_consts['SHAPE_A']   = to_shape_const_str(inbuf.shape)
     shader_consts['SHAPE_OUT'] = to_shape_const_str(outbuf.shape)
 
-    shader_bytes = shaders.get_shader('slice', **shader_consts)
-    return [Op([outbuf.tensor, inbuf.tensor], shader_bytes, equation)]
+    return [Op.construct([outbuf, inbuf], 'slice', equation, **shader_consts)]
 
 
-def threefry2x32(self, equation:jax.core.JaxprEqn):
-    inbufs  = [self.get_or_create_buffer(v) for v in equation.invars]
-    outbufs = [self.get_or_create_buffer(v) for v in equation.outvars]
+def threefry2x32(bufferpool, equation:jax.core.JaxprEqn):
+    inbufs  = [bufferpool.get_buffer(v) for v in equation.invars]
+    outbufs = [bufferpool.get_buffer(v) for v in equation.outvars]
 
     assert inbufs[0].shape  == inbufs[1].shape
     assert inbufs[2].shape  == inbufs[3].shape
@@ -566,7 +560,7 @@ def threefry2x32(self, equation:jax.core.JaxprEqn):
     return [Op.construct(outbufs+inbufs, 'threefry2x32', equation, **shader_consts)]
 
 
-def convert_element_type(self, equation:jax.core.JaxprEqn):
-    inbuf  = self.get_or_create_buffer(equation.invars[0])
-    outbuf = self.get_or_create_buffer(equation.outvars[0])
+def convert_element_type(bufferpool, equation:jax.core.JaxprEqn):
+    inbuf  = bufferpool.get_buffer(equation.invars[0])
+    outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
     return [Op.construct([outbuf,inbuf], 'convert_element_type', equation)]

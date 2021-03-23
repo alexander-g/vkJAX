@@ -1,6 +1,6 @@
 #version 450
 
-layout (local_size_x = 32) in;
+layout (local_size_x = {{WORKGROUP_X}}) in;
 
 layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
 layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };   //lhs, image
@@ -56,13 +56,15 @@ void main() {
     
 
     float sum = 0.0;
-    for(int c=0; c<SHAPE_B[SPEC_RHS[1]]; c++){                                     //in feature dimension
-        for(int i0=0; i0<dSHAPE_B[SPEC_RHS[2]]; i0+=DILATE_RHS[0]){                 //spatial dimension 0
-            for(int i1=0; i1<dSHAPE_B[SPEC_RHS[3]]; i1+=DILATE_RHS[1]){             //spatial dimension 1
-                int[N] coords_a, coords_b;
+    
+    for(int i0=0; i0<dSHAPE_B[SPEC_RHS[2]]; i0+=DILATE_RHS[0]){                 //spatial dimension 0
+        const int j0 = coords_out[SPEC_OUT[2]] * STRIDES[0] + i0 - PADDING[0];
 
-                const int j0 = coords_out[SPEC_OUT[2]] * STRIDES[0] + i0 - PADDING[0];
-                const int j1 = coords_out[SPEC_OUT[3]] * STRIDES[1] + i1 - PADDING[1];
+        for(int i1=0; i1<dSHAPE_B[SPEC_RHS[3]]; i1+=DILATE_RHS[1]){             //spatial dimension 1
+            const int j1 = coords_out[SPEC_OUT[3]] * STRIDES[1] + i1 - PADDING[1];
+
+            for(int c=0; c<SHAPE_B[SPEC_RHS[1]]; c++){                          //in feature dimension
+                int[N] coords_a, coords_b;
 
                 coords_a[SPEC_LHS[0]] = coords_out[SPEC_OUT[0]];       //batch dimension
                 coords_a[SPEC_LHS[1]] = c;                             //in feature dimension
