@@ -274,7 +274,8 @@ param_matrix = [
     (rev0,       'rev0 dims=1,2',       [np.random.random([33,77,88,11])]),
 
     (integer_pow0, 'x**2',              [np.random.random([77,9,35])]),
-    (integer_pow1, 'x**5',              [np.random.random([77,9,35])]),
+    (integer_pow1, 'x**5',              [np.random.random([77,9,35])*2-1]),
+    (integer_pow1, 'int**5',            [np.random.randint(-1000, 1000, size=[77,9,35])]),
     (pow0, 'x**scalar',                 [np.random.random([77,9,35]), np.random.random()]),
 
     (slice0, '1-D slice(x, [2],[5])',   [np.random.random([99])]),

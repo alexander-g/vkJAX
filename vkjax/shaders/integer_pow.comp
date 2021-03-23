@@ -3,14 +3,26 @@
 layout (local_size_x = {{WORKGROUP_X}}) in;
 
 
-layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
-layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };
+layout(set = 0, binding = 0) writeonly buffer bout { {{DTYPE0}} result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { {{DTYPE1}} in_a[]; };
 
 //constants injected in python
-const float Y = {{Y}};
+const int Y = {{Y}};
+
 
 
 void main() {
     const uint index = gl_GlobalInvocationID.x;
-    result[index] = pow(in_a[index], Y);
+
+    const {{DTYPE0}} a = in_a[index];
+          {{DTYPE1}} z = 1;
+    
+    //using loop because GLSL pow() apparently always returns float
+    for(int i=0; i<Y; i++){
+        z *= a;
+    }
+
+    result[index] = z;
+
+    //result[index] = (pow(in_a[index], Y));
 }
