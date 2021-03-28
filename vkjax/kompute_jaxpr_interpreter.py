@@ -56,6 +56,9 @@ class JaxprInterpreter:
             tensors   = [b.tensor for b in op.buffers]
             workgroup = op.workgroup or (np.prod(op.buffers[0].shape),1,1)
             workgroup = (np.ceil(workgroup[0]/self.workgroup_size).astype(int),)+workgroup[1:]
+            if np.prod(workgroup)==0:
+                #zero-sized buffers and thus workgroups can happen for some reason, skip
+                continue
             algo      = self.mgr.algorithm(tensors, op.shader, workgroup)
             self.sequence.record(kp.OpAlgoDispatch(algo))
     
