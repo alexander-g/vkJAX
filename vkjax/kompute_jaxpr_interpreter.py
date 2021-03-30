@@ -4,7 +4,7 @@ import os
 
 from . import ops
 from . import shaders
-from .buffers import BufferPool, maybe_pad, view_as_float32
+from .buffers import BufferPool, Buffer, maybe_pad, view_as_float32
 
 import kp
 import numpy as np
@@ -12,14 +12,23 @@ import jax
 
 
 class JaxprInterpreter:
-    def __init__(self, jaxpr:jax.core.ClosedJaxpr, static_argnums:tp.Tuple[int]=(), profiling:bool=False, reuse_buffers:bool=True):
+    def __init__(
+        self, 
+        jaxpr:             jax.core.ClosedJaxpr, 
+        manager:           kp.Manager,
+        bufferpool:        BufferPool,
+        preloaded_args:    tp.Dict[int, "Buffer"] = {},
+        static_argnums:    tp.Tuple[int]          = (), 
+        profiling:         bool                   = False,
+        workgroup_size:    int                    = 1,
+    ):
         self.jaxpr          = jaxpr
+        self.mgr            = manager
+        self.preloaded_args = preloaded_args
         self.static_argnums = static_argnums
         self.profiling      = profiling
-        device              = int(os.environ.get('VKJAX_DEVICE', 0))
-        self.mgr            = kp.Manager(device)
-        self.workgroup_size = get_maximum_workgroup_size(self.mgr)
-        self.bufferpool     = BufferPool(self.mgr, self.workgroup_size, reuse_buffers)
+        self.workgroup_size = workgroup_size
+        self.bufferpool     = bufferpool
         shaders.DEFAULTS['WORKGROUP_X'] = self.workgroup_size
 
         self.analyze_closed_jaxpr(jaxpr)
@@ -33,8 +42,14 @@ class JaxprInterpreter:
             b = self.bufferpool.get_buffer(constvar)
             self.bufferpool.mark_buffer_as_constant(b, constvar, value=constval)
         
-        for v in jaxpr.jaxpr.invars + jaxpr.jaxpr.outvars:
-            b = self.bufferpool.get_buffer(v)
+        for i,v in enumerate(jaxpr.jaxpr.invars + jaxpr.jaxpr.outvars):
+            if i in self.preloaded_args:
+                #use the provided buffer
+                b = self.preloaded_args[i]
+                self.bufferpool.set_buffer(v, b)
+            else:
+                #create new buffer
+                b = self.bufferpool.get_buffer(v)
             #by setting I/O buffers constant, they are guaranteed to get an own tensor
             #thus avoiding possibly larger than needed data<->device transfers
             #(currently a limitation by kompute)
@@ -48,8 +63,8 @@ class JaxprInterpreter:
         n_timestamps  = len(self.all_ops)+2 if self.profiling else 0
         self.sequence = self.mgr.sequence(total_timestamps=n_timestamps)
 
-        if len(input_buffers) > 0:
-            input_tensors = [b.tensor for b in input_buffers]
+        input_tensors = [b.tensor for b in input_buffers if b not in self.preloaded_args.values()]
+        if len(input_tensors) > 0:
             self.sequence.record(kp.OpTensorSyncDevice(input_tensors))
 
         for op in self.all_ops:
@@ -62,7 +77,8 @@ class JaxprInterpreter:
             algo      = self.mgr.algorithm(tensors, op.shader, workgroup)
             self.sequence.record(kp.OpAlgoDispatch(algo))
     
-        output_tensors = [b.tensor for b in output_buffers]
+        #don't need to sync outputs that are identical to inputs
+        output_tensors = [b.tensor for b in output_buffers if b not in input_buffers]
         self.sequence.record(kp.OpTensorSyncLocal(output_tensors))
 
 
@@ -72,7 +88,9 @@ class JaxprInterpreter:
         X             = jax.tree_leaves([x for i,x in enumerate(X) if i not in self.static_argnums])
         if len(input_tensors) != len(X):
             raise TypeError(f'Expected {len(input_tensors)} input arguments, received {len(X)}')
-        for input_tensor, x, var in zip(input_tensors, X, self.jaxpr.jaxpr.invars):
+        for i, (input_tensor, x, var) in enumerate(zip(input_tensors, X, self.jaxpr.jaxpr.invars)):
+            if i in self.preloaded_args:
+                continue
             #kompute always uses float32
             x = view_as_float32(np.asarray(x, dtype=var.aval.dtype))
             input_tensor.data()[:] = maybe_pad(x, pad_to=len(input_tensor))
@@ -100,6 +118,3 @@ class JaxprInterpreter:
 
 
 
-def get_maximum_workgroup_size(mgr:kp.Manager):
-    devprops = mgr.get_device_properties()
-    return min(devprops['max_work_group_invocations'], devprops['max_work_group_size'][0])

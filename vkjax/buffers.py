@@ -28,6 +28,8 @@ class Buffer:
         array = array[:n].reshape(self.shape)
         return array
     
+    __array__ = numpy
+    
     def nbytes(self):
         assert self.dtype.type in {np.bool_, np.float32, np.int32, np.uint32}, NotImplementedError(self.dtype)
         #NOTE: booleans are also 32-bit in glsl
@@ -180,10 +182,10 @@ class BufferPool:
                 continue
             
             #must not be accessed inbetween this buffer's accesses
-            t_accesses = tensor_access_map[t]
-            if max(b.accesses) < min(t_accesses) or min(b.accesses) > max(t_accesses):
+            t_accesses = tensor_access_map.get(t)
+            if t_accesses is None or max(b.accesses) < min(t_accesses) or min(b.accesses) > max(t_accesses):
                 #re-use tensor
-                tensor_access_map[t] += b.accesses
+                tensor_access_map[t] = tensor_access_map.get(t, []) + b.accesses
                 return t
 
     def _create_tensor(self, var:jax.core.Var, initial_value:np.ndarray = None):
@@ -192,7 +194,7 @@ class BufferPool:
             initial_value = var.val
         elif initial_value is None:
             initial_value = np.zeros(var.aval.shape, var.aval.dtype)
-        else:
+        elif var is not None:
             assert initial_value.size == np.prod(var.aval.shape), (initial_value.shape, var.aval.shape)
 
         initial_value = maybe_pad(initial_value, pad_to=self.workgroup_size)

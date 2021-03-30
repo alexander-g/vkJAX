@@ -4,6 +4,7 @@ from jax import core
 from jax import lax
 from jax.util import safe_map
 
+import vkjax
 from vkjax.kompute_jaxpr_interpreter import JaxprInterpreter
 
 
@@ -68,7 +69,8 @@ def deep_debug(vk_fun, *args):
   vki = list(vk_fun._jaxpr_interpreters.values())[0]
   print(vki.jaxpr)
   #re-instantiate interpreter without memory buffer re-use
-  vki = JaxprInterpreter(vki.jaxpr, vki.static_argnums, reuse_buffers=False)
+  bufferpool  = vkjax.buffers.BufferPool(vki.mgr, vki.workgroup_size, reuse_tensors=False)
+  vki = JaxprInterpreter(vki.jaxpr,  vki.mgr, bufferpool, static_argnums=vki.static_argnums)
   
   _, envpred = vki.run(*args, return_all=True)
   _, envtrue = eval_jaxpr(vki.jaxpr.jaxpr, vki.jaxpr.literals, *args, return_env=True)
