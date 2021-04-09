@@ -125,6 +125,7 @@ scatter_add_fn1 = lambda x,i,u: jax.lax.scatter_add(
 def add_any0(p, ct): return jax.vjp(lambda x:x+x, p)[1](ct)+(np.float32(1),)
 
 def transpose0(x): return x.T
+def transpose1(x): return x.transpose(3,0,2,1)
 def rev0(x): return jax.lax.rev(x, dimensions=[1,2])
 def integer_pow0(x): return x**2
 def integer_pow1(x): return x**5
@@ -273,6 +274,7 @@ param_matrix = [
 
     (transpose0, 'random([N,N]).T',     [np.random.random([32,32])]),
     (transpose0, 'random([N,M]).T',     [np.random.random([32,65])]),
+    (transpose1, '.transpose(3,0,2,1)', [np.random.random([65,33,9,777])]),
     (rev0,       'rev0 dims=1,2',       [np.random.random([33,77,88,11])]),
 
     (integer_pow0, 'x**2',              [np.random.random([77,9,35])]),
