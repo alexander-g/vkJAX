@@ -59,3 +59,15 @@ def test_dtype_checking():
     assert y1.dtype == np.float32
     assert len(vk_func._jaxpr_interpreters)==2
 
+
+def test_buffer_args():
+    def fun(x):
+        return x + 1.0
+    
+    vkfun = vkjax.wrap(fun)
+    x     = np.arange(5)*1.0
+    args  = vkfun.to_buffers(x)
+
+    y = vkfun(args)
+    assert all(y == fun(x))
+
