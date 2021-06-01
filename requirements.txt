@@ -2,6 +2,6 @@ jax
 jaxlib
 
 #vulkan-kompute
-git+git://github.com/EthicalML/vulkan-kompute@b0df305daf7439e495ffb9bf1268de8c9e1e39f9
+kp==0.7.0
 
 pyshaderc
