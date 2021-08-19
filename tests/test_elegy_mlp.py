@@ -121,7 +121,8 @@ def test_basic_training():
     interpreter = list(vkmodel.call_train_step_jit._jaxpr_interpreters.values())[0]
     jaxpr       = interpreter.jaxpr
     #re-instantiate interpreter without memory buffer re-use
-    interpreter = JaxprInterpreter(jaxpr, interpreter.static_argnums, reuse_buffers=False)
+    bufferpool  = vkjax.buffers.BufferPool(interpreter.mgr, interpreter.workgroup_size, reuse_tensors=False)
+    interpreter = JaxprInterpreter(jaxpr, interpreter.mgr, bufferpool, static_argnums=interpreter.static_argnums)
 
     _, envtrue  = eval_jaxpr(jaxpr.jaxpr, jaxpr.literals, x, y, None,None, model.states, return_env=True)
     _, envpred  = interpreter.run(x, y, None,None, model.states, False, False, return_all=True)
@@ -141,8 +142,6 @@ def test_basic_initialization():
     model  = elegy.Model(MLP(), seed=1)
     model.init(x)
     states = model.states
-
-    #deep_debug(vkmodel.call_init_step_jit, x)
 
     #NOTE: atol higher than default, limited by erf_inv
     assert np.all(jax.tree_multimap(lambda x,y: np.allclose(x,y, rtol=1e-5, atol=2e-3), jax.tree_leaves(states), jax.tree_leaves(vkstates) ))

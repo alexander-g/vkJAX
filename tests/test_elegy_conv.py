@@ -85,7 +85,8 @@ def test_basic_training():
     interpreter = list(vkmodel.call_train_step_jit._jaxpr_interpreters.values())[0]
     jaxpr       = interpreter.jaxpr
     #re-instantiate interpreter without memory buffer re-use
-    interpreter = JaxprInterpreter(jaxpr, interpreter.static_argnums, reuse_buffers=False)
+    bufferpool  = vkjax.buffers.BufferPool(interpreter.mgr, interpreter.workgroup_size, reuse_tensors=False)
+    interpreter = JaxprInterpreter(jaxpr, interpreter.mgr, bufferpool, static_argnums=interpreter.static_argnums)
 
     _, envtrue  = eval_jaxpr(jaxpr.jaxpr, jaxpr.literals, x, y, None,None, model.states, return_env=True)
     _, envpred  = interpreter.run(x, y, None,None, model.states, False, False, return_all=True)

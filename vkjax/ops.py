@@ -433,12 +433,14 @@ def scatter_add(bufferpool, equation:jax.core.JaxprEqn):
         raise NotImplementedError(equation)
 
 def transpose(bufferpool, equation:jax.core.JaxprEqn):
-    assert equation.params['permutation'] == (1,0)
-
     inbuf  = bufferpool.get_buffer(equation.invars[0])
     outbuf = bufferpool.get_buffer(equation.outvars[0], increment_op_counter=True)
 
-    shader_consts = dict(N=inbuf.shape[0], M=inbuf.shape[1])
+    shader_consts = dict()
+    shader_consts['N']           = len(inbuf.shape);
+    shader_consts['SHAPE_OUT']   = to_shape_const_str(outbuf.shape)
+    shader_consts['SHAPE_A']     = to_shape_const_str(inbuf.shape)
+    shader_consts['PERMUTATION'] = to_shape_const_str(equation.params['permutation'])
     return [Op.construct([outbuf, inbuf], equation.primitive.name, equation, **shader_consts)]
 
 

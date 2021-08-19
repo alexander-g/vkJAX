@@ -3,17 +3,35 @@
 layout (local_size_x = {{WORKGROUP_X}}) in;
 
 
-layout(set = 0, binding = 0) writeonly buffer bout { float result[]; };
-layout(set = 0, binding = 1) readonly  buffer bina { float in_a[]; };
+layout(set = 0, binding = 0) writeonly buffer bout { {{DTYPE0}} result[]; };
+layout(set = 0, binding = 1) readonly  buffer bina { {{DTYPE1}} in_a[]; };
+
+
+//constants injected in python
+const uint N            = {{N}};   //number of dimensions
+const uint SHAPE_OUT[N] = uint[]{{SHAPE_OUT}};
+const uint SHAPE_A[N]   = uint[]{{SHAPE_A}};
+const uint PERMUTATION[N] = uint[]{{PERMUTATION}};
+
+
+//file include: common.glsl
+{{COMMON_GLSL}}
+
+
+int[N] permute_coords(const int[N] coords, const uint[N] permutation){
+    int[N] new_coords = coords;
+    for(int i=0; i<N; i++){
+        new_coords[permutation[i]] = coords[i];
+    }
+    return new_coords;
+}
+
 
 void main() {
-    //constants injected in python
-    //in_a is a NxM matrix
-    const uint N = {{N}};
-    const uint M = {{M}};
+    const uint index          = gl_GlobalInvocationID.x;
+    const int[N] coords_out   = unravel_index(index, SHAPE_OUT);
+    const int[N] coords_a     = permute_coords(coords_out, PERMUTATION);
+    const uint index_a        = ravel_coords(coords_a, SHAPE_A);
     
-    const uint index = gl_GlobalInvocationID.x;
-    const uint row = index / N;
-    const uint col = index % N;
-    result[index] = in_a[col*M + row];
+    result[index] = in_a[index_a];
 }
